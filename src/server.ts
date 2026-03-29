@@ -5,6 +5,7 @@ import { resolve } from 'path';
 import { mkdirSync } from 'fs';
 import { getDb } from './db/index.js';
 import { renderRoutes } from './api/edit/render.js';
+import { templateRoutes } from './api/edit/templates.js';
 import { sourcesRoutes } from './api/ingest/sources.js';
 import { uploadRoutes } from './api/ingest/upload.js';
 import { assetsRoutes } from './api/serve/assets.js';
@@ -47,6 +48,7 @@ export async function createServer(opts?: { testing?: boolean }) {
 
   // Register API routes
   await app.register(renderRoutes);
+  await app.register(templateRoutes);
   await app.register(sourcesRoutes);
   await app.register(uploadRoutes);
   await app.register(assetsRoutes);
