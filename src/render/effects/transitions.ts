@@ -152,3 +152,127 @@ export function buildTransitionOut(name: string): TransitionResult | null {
 
   return { className, keyframes, duration: parsed.duration };
 }
+
+/**
+ * Get the inline CSS styles for a transition-in at a specific time.
+ * @param name - Transition name (e.g., "fade", "fadeSlow")
+ * @param time - Time relative to layer start
+ * @returns CSS inline styles string or empty string
+ */
+export function getTransitionInStyleAtTime(name: string, time: number): string {
+  const parsed = parseTransition(name);
+  if (!parsed) return '';
+  const def = TRANSITION_DEFS[parsed.base];
+
+  if (time >= parsed.duration) {
+    // Transition complete — use 'to' state
+    return propsToString(def.to);
+  }
+  if (time <= 0) {
+    return propsToString(def.from);
+  }
+
+  const progress = easeInOut(time / parsed.duration);
+  return interpolateProps(def.from, def.to, progress);
+}
+
+/**
+ * Get the inline CSS styles for a transition-out at a specific time.
+ * @param name - Transition name (e.g., "fade", "fadeSlow")
+ * @param time - Time relative to the start of the out-transition
+ *               (i.e., 0 = transition starts, duration = transition ends)
+ * @returns CSS inline styles string or empty string
+ */
+export function getTransitionOutStyleAtTime(name: string, time: number): string {
+  const parsed = parseTransition(name);
+  if (!parsed) return '';
+  const def = TRANSITION_DEFS[parsed.base];
+
+  if (time <= 0) {
+    // Before transition starts — show normal (to) state
+    return propsToString(def.to);
+  }
+  if (time >= parsed.duration) {
+    // Transition complete — use 'from' (hidden) state
+    return propsToString(def.from);
+  }
+
+  const progress = easeInOut(time / parsed.duration);
+  // Out = reverse: interpolate from 'to' (visible) to 'from' (hidden)
+  return interpolateProps(def.to, def.from, progress);
+}
+
+/**
+ * Get the duration of a parsed transition by name.
+ */
+export function getTransitionDuration(name: string): number {
+  const parsed = parseTransition(name);
+  return parsed ? parsed.duration : 0;
+}
+
+function easeInOut(t: number): number {
+  return t < 0.5
+    ? 2 * t * t
+    : 1 - Math.pow(-2 * t + 2, 2) / 2;
+}
+
+function interpolateProps(
+  from: Record<string, string>,
+  to: Record<string, string>,
+  progress: number,
+): string {
+  const result: string[] = [];
+  for (const key of Object.keys(from)) {
+    const fromVal = from[key];
+    const toVal = to[key];
+    if (fromVal === undefined || toVal === undefined) continue;
+    result.push(`${key}: ${interpolateValue(fromVal, toVal, progress)};`);
+  }
+  return result.join(' ');
+}
+
+function interpolateValue(from: string, to: string, t: number): string {
+  // Try to interpolate numeric values
+  const fromNum = parseFloat(from);
+  const toNum = parseFloat(to);
+  if (!isNaN(fromNum) && !isNaN(toNum)) {
+    return String(fromNum + (toNum - fromNum) * t);
+  }
+
+  // Handle transform functions like translateX(100%)
+  const fromMatch = from.match(/^([a-zA-Z]+)\((.+)\)$/);
+  const toMatch = to.match(/^([a-zA-Z]+)\((.+)\)$/);
+  if (fromMatch && toMatch && fromMatch[1] === toMatch[1]) {
+    const fn = fromMatch[1];
+    const fromInner = parseFloat(fromMatch[2]);
+    const toInner = parseFloat(toMatch[2]);
+    if (!isNaN(fromInner) && !isNaN(toInner)) {
+      const unit = fromMatch[2].replace(/[-.0-9]+/, '') || '';
+      const val = fromInner + (toInner - fromInner) * t;
+      return `${fn}(${val}${unit})`;
+    }
+  }
+
+  // Handle compound transforms like "translateX(100%) rotate(5deg)"
+  // Fall back to discrete switch
+  return t < 0.5 ? from : to;
+}
+
+/**
+ * Handle clip-path inset interpolation: "inset(a b c d)" values.
+ */
+function interpolateClipPath(from: string, to: string, t: number): string {
+  const fromMatch = from.match(/inset\(([^)]+)\)/);
+  const toMatch = to.match(/inset\(([^)]+)\)/);
+  if (!fromMatch || !toMatch) return t < 0.5 ? from : to;
+
+  const fromVals = fromMatch[1].split(/\s+/).map(v => parseFloat(v));
+  const toVals = toMatch[1].split(/\s+/).map(v => parseFloat(v));
+  if (fromVals.length !== toVals.length) return t < 0.5 ? from : to;
+
+  const vals = fromVals.map((fv, i) => {
+    const tv = toVals[i];
+    return `${fv + (tv - fv) * t}%`;
+  });
+  return `inset(${vals.join(' ')})`;
+}

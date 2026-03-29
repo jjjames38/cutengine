@@ -1,5 +1,6 @@
 import { spawn } from 'child_process';
 import { IROutput, IRAudioMix } from '../parser/types.js';
+import { buildAudioMix } from './audio-mixer.js';
 
 export interface EncodeOptions {
   frameDir: string;
@@ -28,7 +29,32 @@ export function buildFFmpegArgs(opts: EncodeOptions): string[] {
   const crf = QUALITY_CRF[output.quality] ?? 23;
 
   switch (output.format) {
-    case 'mp4':
+    case 'mp4': {
+      const hasAudio = opts.audio && (opts.audio.clips.length > 0 || opts.audio.soundtrack);
+
+      if (hasAudio) {
+        const totalDuration = opts.frameCount / output.fps;
+        const mix = buildAudioMix(opts.audio!, totalDuration);
+
+        if (mix.filterComplex) {
+          return [
+            '-framerate', String(output.fps),
+            '-i', `${frameDir}/${framePattern}`,
+            ...mix.inputArgs,
+            '-filter_complex', mix.filterComplex,
+            ...mix.mapArgs,
+            '-c:v', 'libx264',
+            '-preset', 'medium',
+            '-crf', String(crf),
+            '-pix_fmt', 'yuv420p',
+            '-movflags', '+faststart',
+            '-shortest',
+            '-y',
+            opts.outputPath,
+          ];
+        }
+      }
+
       return [
         '-framerate', String(output.fps),
         '-i', `${frameDir}/${framePattern}`,
@@ -40,6 +66,7 @@ export function buildFFmpegArgs(opts: EncodeOptions): string[] {
         '-y',
         opts.outputPath,
       ];
+    }
     case 'gif':
       return [
         '-framerate', String(output.fps),

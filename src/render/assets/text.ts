@@ -5,13 +5,15 @@ import type { RenderedElement } from './image.js';
 
 /**
  * Map Shotstack vertical position strings to CSS.
+ * Uses offset values when provided for precise positioning.
  */
-function mapVerticalPosition(position?: string): string {
+function mapVerticalPosition(position?: string, offsetY?: number): string {
+  const offset = offsetY !== undefined ? Math.abs(offsetY) * 100 : undefined;
   switch (position) {
     case 'top':
-      return 'top: 10%; bottom: auto;';
+      return `top: ${offset !== undefined ? offset : 10}%; bottom: auto;`;
     case 'bottom':
-      return 'bottom: 10%; top: auto;';
+      return `bottom: ${offset !== undefined ? offset : 10}%; top: auto;`;
     case 'center':
     default:
       return 'top: 50%; transform: translateY(-50%);';
@@ -20,13 +22,14 @@ function mapVerticalPosition(position?: string): string {
 
 /**
  * Build CSS text-shadow for stroke effect.
- * Uses 4-direction shadow to simulate stroke/outline.
+ * Uses 8-direction shadow for better stroke quality that matches Shotstack output.
  */
 function buildStroke(stroke?: { color?: string; width?: number }): string {
   if (!stroke || !stroke.color || !stroke.width) return '';
   const c = stroke.color;
   const w = stroke.width;
-  return `text-shadow: ${w}px 0 ${c}, -${w}px 0 ${c}, 0 ${w}px ${c}, 0 -${w}px ${c};`;
+  // 8-direction shadow for more uniform stroke appearance
+  return `text-shadow: ${w}px 0 ${c}, -${w}px 0 ${c}, 0 ${w}px ${c}, 0 -${w}px ${c}, ${w}px ${w}px ${c}, -${w}px -${w}px ${c}, ${w}px -${w}px ${c}, -${w}px ${w}px ${c};`;
 }
 
 export function renderText(layer: IRLayer, layerIndex: number): RenderedElement {
@@ -42,15 +45,15 @@ export function renderText(layer: IRLayer, layerIndex: number): RenderedElement 
   const fontWeight = font.weight ?? 400;
   const textAlign = alignment?.horizontal ?? 'center';
 
-  // Determine vertical position from asset alignment
-  const verticalPos = mapVerticalPosition(alignment?.vertical);
+  // Determine vertical position from asset alignment, using offsetY for precise positioning
+  const offsetY = layer.position.offsetY;
+  const verticalPos = mapVerticalPosition(alignment?.vertical, offsetY !== 0 ? offsetY : undefined);
   const strokeCss = buildStroke(stroke);
 
-  // Offsets from position
+  // Offsets from position (only horizontal — vertical is handled by mapVerticalPosition)
   const offsetX = layer.position.offsetX;
-  const offsetY = layer.position.offsetY;
-  const offsetTransform = (offsetX !== 0 || offsetY !== 0)
-    ? `margin-left: ${offsetX * 100}%; margin-top: ${offsetY * -100}%;`
+  const offsetTransform = (offsetX !== 0)
+    ? `margin-left: ${offsetX * 100}%;`
     : '';
 
   const css = `

@@ -11,9 +11,9 @@ import { renderShape } from '../assets/shape.js';
 import { renderSvg } from '../assets/svg.js';
 import { renderTitle } from '../assets/title.js';
 import { renderLuma } from '../assets/luma.js';
-import { buildKenBurns } from '../effects/kenburns.js';
+import { buildKenBurns, getKenBurnsTransformAtTime } from '../effects/kenburns.js';
 import { buildFilter } from '../effects/filters.js';
-import { buildTransitionIn, buildTransitionOut } from '../effects/transitions.js';
+import { buildTransitionIn, buildTransitionOut, getTransitionInStyleAtTime, getTransitionOutStyleAtTime, getTransitionDuration } from '../effects/transitions.js';
 
 /**
  * Render a single layer to HTML + CSS based on its asset type.
@@ -204,6 +204,113 @@ export function buildScene(scene: IRScene, output: IROutput, totalDuration?: num
         `id="layer-$1" class="${classes.join(' ')}"`
       );
       allHtml.push(withClasses);
+    } else {
+      allHtml.push(html);
+    }
+  }
+
+  return wrapInHtml(allHtml.join('\n'), allCss.join('\n'), output.width, output.height);
+}
+
+/**
+ * Build HTML for a single frame at a specific time.
+ *
+ * Instead of relying on CSS animations for visibility, KenBurns, and transitions,
+ * this function computes the exact styles for each layer at the given time.
+ * Only layers visible at time T are included. This eliminates CSS animation
+ * timing conflicts between visibility, KenBurns, and transitions.
+ */
+export function buildFrameAtTime(scene: IRScene, output: IROutput, time: number): string {
+  const allCss: string[] = [];
+  const allHtml: string[] = [];
+
+  const totalLayers = scene.layers.length;
+
+  for (let i = 0; i < totalLayers; i++) {
+    const layer = scene.layers[i];
+    if (layer.type !== 'visual') continue;
+
+    const layerStart = layer.timing.start;
+    const layerEnd = layerStart + layer.timing.duration;
+
+    // Skip layers not visible at this time
+    if (time < layerStart || time >= layerEnd) continue;
+
+    const { html, css } = renderLayer(layer, i);
+
+    // z-index: first layer on top
+    const zIndex = totalLayers - i;
+    let layerCss = css;
+    layerCss += `\n  #layer-${i} { z-index: ${zIndex}; }`;
+
+    // Time relative to layer start
+    const localTime = time - layerStart;
+    const inlineStyles: string[] = [];
+
+    // Compute KenBurns transform at this time
+    if (layer.effects.motion) {
+      const transform = getKenBurnsTransformAtTime(
+        layer.effects.motion,
+        localTime,
+        layer.timing.duration,
+      );
+      if (transform) {
+        inlineStyles.push(`transform: ${transform}`);
+      }
+    }
+
+    // Compute transition-in opacity/style at this time
+    if (layer.timing.transitionIn) {
+      const transStyle = getTransitionInStyleAtTime(layer.timing.transitionIn, localTime);
+      if (transStyle) {
+        inlineStyles.push(transStyle);
+      }
+    }
+
+    // Compute transition-out style at this time
+    if (layer.timing.transitionOut) {
+      const outDuration = getTransitionDuration(layer.timing.transitionOut);
+      const outStart = layer.timing.duration - outDuration;
+      const outLocalTime = localTime - outStart;
+      if (outLocalTime > 0) {
+        const transStyle = getTransitionOutStyleAtTime(layer.timing.transitionOut, outLocalTime);
+        if (transStyle) {
+          inlineStyles.push(transStyle);
+        }
+      }
+    }
+
+    // Apply filter effect
+    if (layer.effects.filter) {
+      const filterVal = buildFilter(layer.effects.filter);
+      if (filterVal) {
+        layerCss += `\n  #layer-${i} { ${filterVal}; }`;
+      }
+    }
+
+    // Apply static opacity (when not handled by transitions)
+    if (layer.effects.opacity !== undefined && typeof layer.effects.opacity === 'number') {
+      if (!layer.timing.transitionIn && !layer.timing.transitionOut) {
+        layerCss += `\n  #layer-${i} { opacity: ${layer.effects.opacity}; }`;
+      }
+    }
+
+    // Apply crop
+    if (layer.crop) {
+      const { top, bottom, left, right } = layer.crop;
+      layerCss += `\n  #layer-${i} { clip-path: inset(${top * 100}% ${right * 100}% ${bottom * 100}% ${left * 100}%); }`;
+    }
+
+    allCss.push(layerCss);
+
+    // Inject inline styles into the HTML element
+    if (inlineStyles.length > 0) {
+      const styleAttr = inlineStyles.join(' ');
+      const withStyle = html.replace(
+        /id="layer-(\d+)"/,
+        `id="layer-$1" style="${styleAttr}"`,
+      );
+      allHtml.push(withStyle);
     } else {
       allHtml.push(html);
     }
