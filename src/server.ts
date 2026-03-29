@@ -1,12 +1,17 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import fastifyStatic from '@fastify/static';
+import { resolve } from 'path';
+import { mkdirSync } from 'fs';
 import { getDb } from './db/index.js';
 import { renderRoutes } from './api/edit/render.js';
 import { sourcesRoutes } from './api/ingest/sources.js';
 import { uploadRoutes } from './api/ingest/upload.js';
+import { assetsRoutes } from './api/serve/assets.js';
 import { createRenderWorker } from './queue/workers/render-worker.js';
 import { createIngestWorker } from './queue/workers/ingest-worker.js';
 import { createQueues } from './queue/queues.js';
+import { config } from './config/index.js';
 import type { Worker } from 'bullmq';
 
 export async function createServer(opts?: { testing?: boolean }) {
@@ -31,10 +36,20 @@ export async function createServer(opts?: { testing?: boolean }) {
     status: 'ok',
   }));
 
+  // Register static file serving for rendered assets
+  const storagePath = resolve(config.storage.path);
+  mkdirSync(storagePath, { recursive: true });
+  await app.register(fastifyStatic, {
+    root: storagePath,
+    prefix: '/serve/v1/assets/',
+    decorateReply: false,
+  });
+
   // Register API routes
   await app.register(renderRoutes);
   await app.register(sourcesRoutes);
   await app.register(uploadRoutes);
+  await app.register(assetsRoutes);
 
   // Start render worker and queues (skip in test mode)
   if (!opts?.testing) {
