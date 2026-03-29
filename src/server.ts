@@ -9,8 +9,10 @@ import { templateRoutes } from './api/edit/templates.js';
 import { sourcesRoutes } from './api/ingest/sources.js';
 import { uploadRoutes } from './api/ingest/upload.js';
 import { assetsRoutes } from './api/serve/assets.js';
+import { createRoutes } from './api/create/generate.js';
 import { createRenderWorker } from './queue/workers/render-worker.js';
 import { createIngestWorker } from './queue/workers/ingest-worker.js';
+import { createCreateWorker } from './queue/workers/create-worker.js';
 import { createQueues } from './queue/queues.js';
 import { config } from './config/index.js';
 import type { Worker } from 'bullmq';
@@ -52,6 +54,7 @@ export async function createServer(opts?: { testing?: boolean }) {
   await app.register(sourcesRoutes);
   await app.register(uploadRoutes);
   await app.register(assetsRoutes);
+  await app.register(createRoutes);
 
   // Start render worker and queues (skip in test mode)
   if (!opts?.testing) {
@@ -64,9 +67,13 @@ export async function createServer(opts?: { testing?: boolean }) {
     const ingestWorker = createIngestWorker(db);
     (app as any).ingestWorker = ingestWorker;
 
+    const createWorker = createCreateWorker();
+    (app as any).createWorker = createWorker;
+
     app.addHook('onClose', async () => {
       await renderWorker.close();
       await ingestWorker.close();
+      await createWorker.close();
       await Promise.all(Object.values(queues).map((q: any) => q.close()));
     });
 
