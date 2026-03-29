@@ -2,7 +2,10 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import { getDb } from './db/index.js';
 import { renderRoutes } from './api/edit/render.js';
+import { sourcesRoutes } from './api/ingest/sources.js';
+import { uploadRoutes } from './api/ingest/upload.js';
 import { createRenderWorker } from './queue/workers/render-worker.js';
+import { createIngestWorker } from './queue/workers/ingest-worker.js';
 import { createQueues } from './queue/queues.js';
 import type { Worker } from 'bullmq';
 
@@ -30,6 +33,8 @@ export async function createServer(opts?: { testing?: boolean }) {
 
   // Register API routes
   await app.register(renderRoutes);
+  await app.register(sourcesRoutes);
+  await app.register(uploadRoutes);
 
   // Start render worker and queues (skip in test mode)
   if (!opts?.testing) {
@@ -39,8 +44,12 @@ export async function createServer(opts?: { testing?: boolean }) {
     const renderWorker = createRenderWorker(db);
     (app as any).renderWorker = renderWorker;
 
+    const ingestWorker = createIngestWorker(db);
+    (app as any).ingestWorker = ingestWorker;
+
     app.addHook('onClose', async () => {
       await renderWorker.close();
+      await ingestWorker.close();
       await Promise.all(Object.values(queues).map((q: any) => q.close()));
     });
 
