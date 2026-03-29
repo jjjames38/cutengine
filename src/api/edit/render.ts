@@ -3,6 +3,7 @@ import { nanoid } from 'nanoid';
 import { schema } from '../../db/index.js';
 import { eq } from 'drizzle-orm';
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
+import type { AppQueues } from '../../queue/queues.js';
 
 export async function renderRoutes(app: FastifyInstance) {
   const db = (app as any).db as BetterSQLite3Database<typeof schema>;
@@ -11,13 +12,28 @@ export async function renderRoutes(app: FastifyInstance) {
     const body = req.body as any;
     const id = nanoid(21);
 
+    const timelineStr = JSON.stringify(body.timeline);
+    const outputStr = JSON.stringify(body.output);
+
     await db.insert(schema.renders).values({
       id,
       status: 'queued',
-      timeline: JSON.stringify(body.timeline),
-      output: JSON.stringify(body.output),
+      timeline: timelineStr,
+      output: outputStr,
       callback: body.callback ?? null,
     });
+
+    // Enqueue render job if queues are available (not in test mode without queues)
+    const queues = (app as any).queues as AppQueues | undefined;
+    if (queues) {
+      await queues.render.add('render', {
+        renderId: id,
+        timeline: timelineStr,
+        output: outputStr,
+        merge: body.merge,
+        callback: body.callback,
+      });
+    }
 
     reply.status(201).send({
       success: true,
