@@ -6,9 +6,11 @@ import type { AIGenerateRequest } from '../../render/assets/ai.js';
 
 export interface GenerationRecord {
   id: string;
-  type: 'text-to-image' | 'image-to-video';
+  type: 'text-to-image' | 'image-to-video' | 'upscale';
   status: 'queued' | 'processing' | 'done' | 'failed';
   prompt?: string;
+  priority?: 'normal' | 'high';
+  style?: string;
   src?: string;
   width?: number;
   height?: number;
@@ -41,10 +43,10 @@ export async function createRoutes(app: FastifyInstance) {
     const body = req.body as AIGenerateRequest;
     const { type } = body;
 
-    if (!type || !['text-to-image', 'image-to-video'].includes(type)) {
+    if (!type || !['text-to-image', 'image-to-video', 'upscale'].includes(type)) {
       return reply.status(400).send({
         success: false,
-        message: 'Invalid type. Must be "text-to-image" or "image-to-video"',
+        message: 'Invalid type. Must be "text-to-image", "image-to-video", or "upscale"',
         status: 400,
       });
     }
@@ -63,9 +65,11 @@ export async function createRoutes(app: FastifyInstance) {
 
     const record: GenerationRecord = {
       id,
-      type: type as 'text-to-image' | 'image-to-video',
+      type: type as 'text-to-image' | 'image-to-video' | 'upscale',
       status: 'queued',
       prompt: body.prompt,
+      priority: (body as any).priority ?? 'normal',
+      style: (body as any).style,
       src: body.src,
       width: body.width,
       height: body.height,

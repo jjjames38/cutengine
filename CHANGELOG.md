@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.2.0] - 2026-03-30
+
+### VisualCore Integration
+
+Integrate VisualCore local GPU inference engine into RenderForge Create API.
+GPU features are disabled by default (opt-in via `GPU_ENABLED=true`).
+
+#### Create API Enhancements
+- Add `upscale` type to Create API (alongside text-to-image, image-to-video)
+- Add optional `priority` and `style` fields to generation requests
+- ProviderRouter: automatic routing based on type, visual_priority, and availability
+- Backward compatible: existing behavior unchanged when GPU is disabled
+
+#### Local GPU Providers
+- **Flux Klein 4B** (text-to-image) via ComfyUI WebSocket API
+- **HunyuanVideo 1.5** (image-to-video) via local REST API
+- **Real-ESRGAN** (upscale) via ncnn-vulkan CLI
+- **Seedance API** (remote fallback) for high-priority video scenes
+
+#### GPU Memory Manager
+- Single-GPU VRAM orchestration (RTX 4090 24GB target)
+- Model swap queue with deduplication
+- Fish Speech always-resident (2GB) for TTS coexistence
+
+#### Quality Control Pipeline
+- CLIP score prompt-image alignment check
+- Aesthetic score evaluation
+- NSFW detection and rejection
+- Video temporal consistency and motion detection
+- Auto-retry with seed variation (up to 3 attempts)
+- Fallback to external API on QC exhaustion
+
+#### Docker GPU Stack
+- `docker-compose.gpu.yml` with ComfyUI + HunyuanVideo + VoiceCore
+- HunyuanVideo Dockerfile + FastAPI REST wrapper
+- Model download script (`scripts/download-models.sh`)
+
+#### Testing
+- 23 new VisualCore tests (293 total across 24 test files)
+- Dimension resolution, GPU memory management, routing logic, QC thresholds
+
 ## [0.1.0] - 2026-03-29
 
 ### Initial Release

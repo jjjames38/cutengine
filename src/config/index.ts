@@ -46,4 +46,26 @@ export const config = {
     jwtSecret: process.env.JWT_SECRET ?? '',
   },
   create: file.create ?? {},
+  gpu: {
+    enabled: process.env.GPU_ENABLED === 'true',
+    vramBudget: parseInt(process.env.GPU_VRAM_BUDGET ?? '22528', 10),
+    swapStrategy: process.env.GPU_SWAP_STRATEGY ?? 'queue',
+  },
+  comfyui: {
+    host: process.env.COMFYUI_HOST ?? 'localhost',
+    port: parseInt(process.env.COMFYUI_PORT ?? '8188', 10),
+    protocol: (process.env.COMFYUI_PROTOCOL ?? 'ws') as 'ws' | 'wss',
+  },
+  hunyuan: {
+    host: process.env.HUNYUAN_HOST ?? 'localhost',
+    port: parseInt(process.env.HUNYUAN_PORT ?? '8190', 10),
+    enableStepDistill: process.env.HUNYUAN_STEP_DISTILL !== 'false',
+    cpuOffload: process.env.HUNYUAN_CPU_OFFLOAD !== 'false',
+  },
+  qc: {
+    enabled: process.env.QC_ENABLED === 'true',
+    clipThreshold: parseFloat(process.env.QC_CLIP_THRESHOLD ?? '0.25'),
+    aestheticThreshold: parseFloat(process.env.QC_AESTHETIC_THRESHOLD ?? '5.0'),
+    nsfwThreshold: parseFloat(process.env.QC_NSFW_THRESHOLD ?? '0.3'),
+  },
 } as const;

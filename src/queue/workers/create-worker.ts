@@ -3,8 +3,9 @@ import { getRedisConnection } from '../connection.js';
 import { generateAIAsset } from '../../render/assets/ai.js';
 import { generations } from '../../api/create/generate.js';
 import type { AIGenerateRequest, ProviderConfig } from '../../render/assets/ai.js';
+import type { ProviderRouter } from '../../create/providers/router.js';
 
-export function createCreateWorker() {
+export function createCreateWorker(router?: ProviderRouter) {
   const worker = new Worker('create', async (job: Job) => {
     const { generationId, request, providerConfig } = job.data as {
       generationId: string;
@@ -19,6 +20,49 @@ export function createCreateWorker() {
     }
 
     try {
+      // When ProviderRouter is available and request has GPU-compatible fields,
+      // use the VisualCore pipeline for local GPU inference.
+      if (router) {
+        const provider = await router.route({
+          type: request.type as 'text-to-image' | 'image-to-video' | 'upscale',
+          prompt: request.prompt ?? '',
+          source_image_url: request.src,
+          visual_priority: (request as any).visual_priority ?? 'normal',
+          style: (request as any).style,
+          aspect_ratio: (request as any).aspect_ratio,
+          resolution: (request as any).resolution,
+          duration: request.duration,
+          seed: (request as any).seed,
+          upscale_factor: (request as any).upscale_factor,
+          is_thumbnail: (request as any).is_thumbnail,
+        });
+
+        const result = await provider.generate({
+          type: request.type as 'text-to-image' | 'image-to-video' | 'upscale',
+          prompt: request.prompt ?? '',
+          source_image_url: request.src,
+          visual_priority: (request as any).visual_priority ?? 'normal',
+          style: (request as any).style,
+          aspect_ratio: (request as any).aspect_ratio,
+          resolution: (request as any).resolution,
+          duration: request.duration,
+          seed: (request as any).seed,
+          upscale_factor: (request as any).upscale_factor,
+          is_thumbnail: (request as any).is_thumbnail,
+        });
+
+        if (record) {
+          record.status = result.status === 'done' ? 'done' : 'failed';
+          record.resultUrl = result.output?.url;
+          record.resultType = result.output?.format === 'mp4' ? 'video' : 'image';
+          record.error = result.error;
+          record.updatedAt = new Date().toISOString();
+        }
+
+        return { url: result.output?.url, type: result.output?.format === 'mp4' ? 'video' : 'image' };
+      }
+
+      // Fallback: existing behavior (external API via generateAIAsset)
       const result = await generateAIAsset(request, providerConfig);
 
       if (record) {

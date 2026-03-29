@@ -79,7 +79,59 @@ export async function createServer(opts?: { testing?: boolean }) {
     const ingestWorker = createIngestWorker(db);
     (app as any).ingestWorker = ingestWorker;
 
-    const createWorker = createCreateWorker();
+    // ── VisualCore GPU Pipeline (opt-in) ──
+    let gpuManager: any = null;
+    let providerRouter: any = null;
+
+    if (config.gpu.enabled) {
+      const { GPUMemoryManager } = await import('./create/gpu/memory-manager.js');
+      const { ProviderRouter } = await import('./create/providers/router.js');
+
+      gpuManager = new GPUMemoryManager({ fishSpeechResident: true });
+
+      const visualCoreConfig = {
+        comfyui: {
+          host: config.comfyui.host,
+          port: config.comfyui.port,
+          protocol: config.comfyui.protocol,
+        },
+        hunyuan: {
+          host: config.hunyuan.host,
+          port: config.hunyuan.port,
+          enable_step_distill: config.hunyuan.enableStepDistill,
+          default_steps: 8,
+        },
+        seedance: {
+          api_key: process.env.SEEDANCE_API_KEY ?? '',
+          api_url: process.env.SEEDANCE_API_URL ?? '',
+          tier: (process.env.SEEDANCE_TIER ?? 'fast') as 'fast' | 'pro',
+        },
+        seedream: {
+          api_key: process.env.SEEDREAM_API_KEY ?? '',
+          api_url: process.env.SEEDREAM_API_URL ?? '',
+        },
+        qc: {
+          clip_threshold: config.qc.clipThreshold,
+          aesthetic_threshold: config.qc.aestheticThreshold,
+          nsfw_threshold: config.qc.nsfwThreshold,
+          max_retries: 3,
+          fallback_to_api: true,
+        },
+        gpu: {
+          swap_strategy: config.gpu.swapStrategy as 'on-demand' | 'scheduled',
+          default_model: 'flux-klein',
+          fish_speech_resident: true,
+          vram_total_gb: Math.round(config.gpu.vramBudget / 1024),
+        },
+        lora_presets: {},
+      };
+
+      providerRouter = new ProviderRouter(visualCoreConfig, gpuManager);
+
+      app.log.info('VisualCore GPU pipeline initialized');
+    }
+
+    const createWorker = createCreateWorker(providerRouter ?? undefined);
     (app as any).createWorker = createWorker;
 
     app.addHook('onClose', async () => {
@@ -87,6 +139,11 @@ export async function createServer(opts?: { testing?: boolean }) {
       await ingestWorker.close();
       await createWorker.close();
       await Promise.all(Object.values(queues).map((q: any) => q.close()));
+
+      // Cleanup GPU resources
+      if (gpuManager) {
+        await gpuManager.unloadAll();
+      }
     });
 
     await app.ready();
