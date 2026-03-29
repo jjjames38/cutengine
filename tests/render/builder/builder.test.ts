@@ -4,7 +4,7 @@ import { renderText } from '../../../src/render/assets/text.js';
 import { buildKenBurns } from '../../../src/render/effects/kenburns.js';
 import { buildFilter } from '../../../src/render/effects/filters.js';
 import { buildTransitionIn, buildTransitionOut } from '../../../src/render/effects/transitions.js';
-import { buildScene } from '../../../src/render/builder/index.js';
+import { buildScene, calcTimelineDuration } from '../../../src/render/builder/index.js';
 import type { IRLayer, IRScene, IROutput } from '../../../src/render/parser/types.js';
 
 // ---- Helpers ----
@@ -318,5 +318,149 @@ describe('buildScene', () => {
     // Should have body but no layer content
     expect(html).toContain('<body>');
     expect(html).not.toContain('layer-0');
+  });
+});
+
+// ---- 10. Timing-based visibility ----
+
+describe('calcTimelineDuration', () => {
+  it('returns max(start + duration) across all visual layers', () => {
+    const layers: IRLayer[] = [
+      makeImageLayer({ timing: { start: 0, duration: 3 } }),
+      makeTextLayer({ timing: { start: 2, duration: 5 } }),
+    ];
+    expect(calcTimelineDuration(layers)).toBe(7);
+  });
+
+  it('ignores audio layers', () => {
+    const layers: IRLayer[] = [
+      makeImageLayer({ timing: { start: 0, duration: 3 } }),
+      { type: 'audio', asset: { type: 'audio' }, timing: { start: 0, duration: 100 }, effects: {}, position: { fit: 'crop', scale: 1, offsetX: 0, offsetY: 0 } },
+    ];
+    expect(calcTimelineDuration(layers)).toBe(3);
+  });
+
+  it('returns 0 for no visual layers', () => {
+    expect(calcTimelineDuration([])).toBe(0);
+  });
+});
+
+describe('buildScene timing visibility', () => {
+  it('generates visibility keyframes for layers with different start times', () => {
+    const scene: IRScene = {
+      startTime: 0,
+      duration: 10,
+      layers: [
+        makeImageLayer({ timing: { start: 0, duration: 5 } }),
+        makeTextLayer({ timing: { start: 5, duration: 5 } }),
+      ],
+    };
+    const html = buildScene(scene, makeOutput(), 10);
+
+    // Both layers should have visibility animations
+    expect(html).toContain('@keyframes vis-0');
+    expect(html).toContain('@keyframes vis-1');
+    // Layer 0: visible 0-50%, layer 1: visible 50-100%
+    expect(html).toContain('animation: vis-0 10s step-end forwards');
+    expect(html).toContain('animation: vis-1 10s step-end forwards');
+  });
+
+  it('does not add visibility animation when layer covers entire timeline', () => {
+    const scene: IRScene = {
+      startTime: 0,
+      duration: 5,
+      layers: [
+        makeImageLayer({ timing: { start: 0, duration: 5 } }),
+      ],
+    };
+    const html = buildScene(scene, makeOutput(), 5);
+
+    // Single layer covering entire timeline: no visibility animation needed
+    expect(html).not.toContain('@keyframes vis-0');
+  });
+
+  it('sets layer opacity to 0 by default when visibility animation is applied', () => {
+    const scene: IRScene = {
+      startTime: 0,
+      duration: 10,
+      layers: [
+        makeTextLayer({ timing: { start: 3, duration: 4 } }),
+      ],
+    };
+    const html = buildScene(scene, makeOutput(), 10);
+
+    expect(html).toContain('#layer-0 { opacity: 0;');
+  });
+
+  it('adds animation-delay to KenBurns matching layer start time', () => {
+    const scene: IRScene = {
+      startTime: 0,
+      duration: 10,
+      layers: [
+        makeImageLayer({
+          timing: { start: 3, duration: 5 },
+          effects: { motion: 'zoomIn' },
+        }),
+      ],
+    };
+    const html = buildScene(scene, makeOutput(), 10);
+
+    expect(html).toContain('animation-delay: 3s');
+    expect(html).toContain('kb-zoomIn');
+  });
+
+  it('adds animation-delay to transition-in matching layer start time', () => {
+    const scene: IRScene = {
+      startTime: 0,
+      duration: 10,
+      layers: [
+        makeImageLayer({
+          timing: { start: 2, duration: 5, transitionIn: 'fade' },
+        }),
+      ],
+    };
+    const html = buildScene(scene, makeOutput(), 10);
+
+    expect(html).toContain('animation-delay: 2s');
+    expect(html).toContain('trans-in-fade');
+  });
+
+  it('adds animation-delay to transition-out near layer end time', () => {
+    const scene: IRScene = {
+      startTime: 0,
+      duration: 10,
+      layers: [
+        makeImageLayer({
+          timing: { start: 2, duration: 5, transitionOut: 'fade' },
+        }),
+      ],
+    };
+    const html = buildScene(scene, makeOutput(), 10);
+
+    // fade transition-out duration is 1s, so delay = 2 + 5 - 1 = 6s
+    expect(html).toContain('animation-delay: 6s');
+    expect(html).toContain('trans-out-fade');
+  });
+
+  it('subtitle layers appear and disappear at correct times', () => {
+    // Simulate a typical subtitle scenario: 3 captions appearing sequentially
+    const scene: IRScene = {
+      startTime: 0,
+      duration: 15,
+      layers: [
+        makeImageLayer({ timing: { start: 0, duration: 15 } }), // background
+        makeTextLayer({ timing: { start: 0, duration: 5 }, asset: { type: 'text', text: 'Subtitle 1' } }),
+        makeTextLayer({ timing: { start: 5, duration: 5 }, asset: { type: 'text', text: 'Subtitle 2' } }),
+        makeTextLayer({ timing: { start: 10, duration: 5 }, asset: { type: 'text', text: 'Subtitle 3' } }),
+      ],
+    };
+    const html = buildScene(scene, makeOutput(), 15);
+
+    // Background covers entire timeline - no visibility anim
+    expect(html).not.toContain('@keyframes vis-0');
+    // Each subtitle gets its own visibility animation
+    expect(html).toContain('@keyframes vis-1');
+    expect(html).toContain('@keyframes vis-2');
+    expect(html).toContain('@keyframes vis-3');
   });
 });

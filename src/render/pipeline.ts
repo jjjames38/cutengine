@@ -45,14 +45,18 @@ export async function executePipeline(
     // Stage 2: Build HTML scene
     stageStart = Date.now();
     await onStatus?.('rendering');
-    const sceneHtml = buildScene(ir.scenes[0], ir.output);
+    const totalDuration = ir.scenes.reduce((sum, s) => sum + s.duration, 0);
+    const sceneHtml = buildScene(ir.scenes[0], ir.output, totalDuration);
     stageLogs.push(logStage('build', stageStart));
 
     // Stage 3: Capture frames
     stageStart = Date.now();
     const frameDir = join(workDir, 'frames');
-    const totalDuration = ir.scenes.reduce((sum, s) => sum + s.duration, 0);
-    const isStatic = !ir.scenes.some(s =>
+    // A scene is static only if all layers share the same timing AND have no effects
+    const hasTimingVariation = ir.scenes.some(s =>
+      s.layers.some(l => l.type === 'visual' && (l.timing.start > 0 || l.timing.duration < totalDuration)),
+    );
+    const isStatic = !hasTimingVariation && !ir.scenes.some(s =>
       s.layers.some(l => l.effects.motion || l.timing.transitionIn || l.timing.transitionOut),
     );
 

@@ -49,17 +49,72 @@ function renderLayer(layer: IRLayer, index: number): { html: string; css: string
 }
 
 /**
+ * Calculate the total timeline duration from all layers.
+ * This is the maximum (start + duration) across all visual layers.
+ */
+export function calcTimelineDuration(layers: IRLayer[]): number {
+  let max = 0;
+  for (const layer of layers) {
+    if (layer.type !== 'visual') continue;
+    const end = layer.timing.start + layer.timing.duration;
+    if (end > max) max = end;
+  }
+  return max;
+}
+
+/**
+ * Build CSS keyframes for timing-based layer visibility.
+ *
+ * Each layer is hidden (opacity: 0) by default, then becomes visible
+ * only during its [start, start+duration] window within the total timeline.
+ * Uses CSS `step-end` timing so transitions are instant (no fade).
+ */
+function buildVisibilityAnimation(
+  index: number,
+  start: number,
+  duration: number,
+  totalDuration: number,
+): { keyframes: string; style: string } {
+  // Edge case: if totalDuration is 0 or layer covers the entire timeline, always show
+  if (totalDuration <= 0 || (start <= 0 && duration >= totalDuration)) {
+    return { keyframes: '', style: '' };
+  }
+
+  const startPct = (start / totalDuration) * 100;
+  const endPct = ((start + duration) / totalDuration) * 100;
+  const name = `vis-${index}`;
+
+  const keyframes = `@keyframes ${name} {
+  0% { opacity: 0; }
+  ${startPct.toFixed(4)}% { opacity: 1; }
+  ${endPct.toFixed(4)}% { opacity: 0; }
+  100% { opacity: 0; }
+}`;
+
+  const style = `#layer-${index} { opacity: 0; animation: ${name} ${totalDuration}s step-end forwards; }`;
+
+  return { keyframes, style };
+}
+
+/**
  * Build the complete HTML page for a single scene.
  *
  * Layers are rendered with z-index so that the first layer in the array
  * appears on top (highest z-index), matching Shotstack's track ordering
  * where earlier tracks overlay later ones.
+ *
+ * Each layer gets timing-based visibility so it only appears during its
+ * [start, start+duration] window. KenBurns and transition animations
+ * use animation-delay to match the layer's start time.
  */
-export function buildScene(scene: IRScene, output: IROutput): string {
+export function buildScene(scene: IRScene, output: IROutput, totalDuration?: number): string {
   const allCss: string[] = [];
   const allHtml: string[] = [];
 
   const totalLayers = scene.layers.length;
+
+  // Calculate the effective total duration for visibility animations
+  const effectiveDuration = totalDuration ?? calcTimelineDuration(scene.layers);
 
   for (let i = 0; i < totalLayers; i++) {
     const layer = scene.layers[i];
@@ -73,11 +128,23 @@ export function buildScene(scene: IRScene, output: IROutput): string {
     let layerCss = css;
     layerCss += `\n  #layer-${i} { z-index: ${zIndex}; }`;
 
-    // Apply motion (Ken Burns) effect
+    // Timing-based visibility: show layer only during its time window
+    const vis = buildVisibilityAnimation(i, layer.timing.start, layer.timing.duration, effectiveDuration);
+    if (vis.keyframes) {
+      allCss.push(vis.keyframes);
+      layerCss += `\n  ${vis.style}`;
+    }
+
+    // Apply motion (Ken Burns) effect with animation-delay matching layer start
     if (layer.effects.motion) {
       const kb = buildKenBurns(layer.effects.motion);
       if (kb) {
-        allCss.push(kb.keyframes);
+        // Override animation-delay to match layer start time
+        const delayedKeyframes = kb.keyframes.replace(
+          /animation: ([^ ]+) ([^ ]+) ([^ ]+) forwards;/,
+          `animation: $1 $2 $3 forwards; animation-delay: ${layer.timing.start}s;`
+        );
+        allCss.push(delayedKeyframes);
         classes.push(kb.className);
       }
     }
@@ -90,8 +157,8 @@ export function buildScene(scene: IRScene, output: IROutput): string {
       }
     }
 
-    // Apply opacity
-    if (layer.effects.opacity !== undefined && typeof layer.effects.opacity === 'number') {
+    // Apply opacity (only when no visibility animation, to avoid conflicts)
+    if (layer.effects.opacity !== undefined && typeof layer.effects.opacity === 'number' && !vis.keyframes) {
       layerCss += `\n  #layer-${i} { opacity: ${layer.effects.opacity}; }`;
     }
 
@@ -101,20 +168,29 @@ export function buildScene(scene: IRScene, output: IROutput): string {
       layerCss += `\n  #layer-${i} { clip-path: inset(${top * 100}% ${right * 100}% ${bottom * 100}% ${left * 100}%); }`;
     }
 
-    // Apply transition-in
+    // Apply transition-in with animation-delay matching layer start
     if (layer.timing.transitionIn) {
       const transIn = buildTransitionIn(layer.timing.transitionIn);
       if (transIn) {
-        allCss.push(transIn.keyframes);
+        const delayedKeyframes = transIn.keyframes.replace(
+          /animation: ([^ ]+) ([^ ]+) ([^ ]+) forwards;/,
+          `animation: $1 $2 $3 forwards; animation-delay: ${layer.timing.start}s;`
+        );
+        allCss.push(delayedKeyframes);
         classes.push(transIn.className);
       }
     }
 
-    // Apply transition-out
+    // Apply transition-out with animation-delay matching layer end time
     if (layer.timing.transitionOut) {
       const transOut = buildTransitionOut(layer.timing.transitionOut);
       if (transOut) {
-        allCss.push(transOut.keyframes);
+        const outStart = layer.timing.start + layer.timing.duration - transOut.duration;
+        const delayedKeyframes = transOut.keyframes.replace(
+          /animation: ([^ ]+) ([^ ]+) ([^ ]+) forwards;/,
+          `animation: $1 $2 $3 forwards; animation-delay: ${Math.max(0, outStart)}s;`
+        );
+        allCss.push(delayedKeyframes);
         classes.push(transOut.className);
       }
     }
