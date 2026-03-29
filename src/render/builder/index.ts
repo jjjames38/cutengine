@@ -5,6 +5,12 @@ import { wrapInHtml } from './html-template.js';
 import { renderImage } from '../assets/image.js';
 import { renderText } from '../assets/text.js';
 import { renderVideo } from '../assets/video.js';
+import { renderRichText } from '../assets/richtext.js';
+import { renderHtml } from '../assets/html.js';
+import { renderShape } from '../assets/shape.js';
+import { renderSvg } from '../assets/svg.js';
+import { renderTitle } from '../assets/title.js';
+import { renderLuma } from '../assets/luma.js';
 import { buildKenBurns } from '../effects/kenburns.js';
 import { buildFilter } from '../effects/filters.js';
 import { buildTransitionIn, buildTransitionOut } from '../effects/transitions.js';
@@ -19,9 +25,20 @@ function renderLayer(layer: IRLayer, index: number): { html: string; css: string
     case 'video':
       return renderVideo(layer, index);
     case 'text':
-    case 'title':
     case 'caption':
       return renderText(layer, index);
+    case 'title':
+      return renderTitle(layer, index);
+    case 'richtext':
+      return renderRichText(layer, index);
+    case 'html':
+      return renderHtml(layer, index);
+    case 'shape':
+      return renderShape(layer, index);
+    case 'svg':
+      return renderSvg(layer, index);
+    case 'luma':
+      return renderLuma(layer, index);
     default:
       // For unsupported types, return an empty placeholder
       return {
