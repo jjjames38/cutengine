@@ -4,6 +4,7 @@ import type { IRScene, IRLayer, IROutput } from '../parser/types.js';
 import { wrapInHtml } from './html-template.js';
 import { renderImage } from '../assets/image.js';
 import { renderText } from '../assets/text.js';
+import { renderVideo } from '../assets/video.js';
 import { buildKenBurns } from '../effects/kenburns.js';
 import { buildFilter } from '../effects/filters.js';
 import { buildTransitionIn, buildTransitionOut } from '../effects/transitions.js';
@@ -15,6 +16,8 @@ function renderLayer(layer: IRLayer, index: number): { html: string; css: string
   switch (layer.asset.type) {
     case 'image':
       return renderImage(layer, index);
+    case 'video':
+      return renderVideo(layer, index);
     case 'text':
     case 'title':
     case 'caption':
