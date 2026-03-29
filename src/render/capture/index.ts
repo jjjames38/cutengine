@@ -27,6 +27,13 @@ export async function captureFrames(opts: CaptureOptions): Promise<CaptureResult
     await page.setContent(opts.html, { waitUntil: 'networkidle0' });
 
     if (opts.isStatic) {
+      // For static scenes, call updateFrame at time 0 to show layers, then screenshot
+      await page.evaluate((time: number) => {
+        if (typeof (window as any).updateFrame === 'function') {
+          (window as any).updateFrame(time);
+        }
+      }, 0);
+
       await page.screenshot({
         path: join(opts.outputDir, 'frame_00001.png'),
         type: 'png',
@@ -39,24 +46,22 @@ export async function captureFrames(opts: CaptureOptions): Promise<CaptureResult
     }
 
     const totalFrames = Math.ceil(opts.fps * opts.duration);
-    const frameDuration = 1000 / opts.fps;
-
-    const cdp = await page.createCDPSession();
-    await cdp.send('Animation.setPlaybackRate', { playbackRate: 0 });
 
     for (let i = 0; i < totalFrames; i++) {
+      const currentTime = i / opts.fps;
+
+      // Update frame via JavaScript (fast! ~1-5ms)
+      await page.evaluate((time: number) => {
+        if (typeof (window as any).updateFrame === 'function') {
+          (window as any).updateFrame(time);
+        }
+      }, currentTime);
+
       const frameNum = String(i + 1).padStart(5, '0');
       await page.screenshot({
         path: join(opts.outputDir, `frame_${frameNum}.png`),
         type: 'png',
       });
-
-      // Advance CSS animations to next frame time
-      await page.evaluate((ms: number) => {
-        document.getAnimations().forEach((anim) => {
-          anim.currentTime = ms;
-        });
-      }, (i + 1) * frameDuration);
     }
 
     return {

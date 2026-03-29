@@ -13,13 +13,11 @@ vi.mock('../../../src/config/index.js', () => ({
   },
 }));
 
-const mockCdpSend = vi.fn();
 const mockPage = {
   setViewport: vi.fn(),
   setContent: vi.fn(),
   screenshot: vi.fn(),
   evaluate: vi.fn(),
-  createCDPSession: vi.fn().mockResolvedValue({ send: mockCdpSend }),
   close: vi.fn(),
 };
 
@@ -36,8 +34,6 @@ vi.mock('puppeteer-core', () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // Re-set default resolved values after clearAllMocks
-  mockPage.createCDPSession.mockResolvedValue({ send: mockCdpSend });
   mockBrowser.newPage.mockResolvedValue(mockPage);
 });
 
@@ -90,7 +86,7 @@ describe('captureFrames', () => {
     });
   });
 
-  it('static capture takes single screenshot and returns frameCount=1', async () => {
+  it('static capture calls updateFrame(0), takes single screenshot and returns frameCount=1', async () => {
     const { captureFrames } = await import(
       '../../../src/render/capture/index.js'
     );
@@ -112,6 +108,8 @@ describe('captureFrames', () => {
       path: '/tmp/static-frames/frame_00001.png',
       type: 'png',
     });
+    // Should call evaluate once for static (to show layers at time 0)
+    expect(mockPage.evaluate).toHaveBeenCalledTimes(1);
   });
 
   it('animated capture with duration=2 fps=25 calls screenshot 50 times', async () => {
@@ -134,7 +132,7 @@ describe('captureFrames', () => {
     expect(mockPage.screenshot).toHaveBeenCalledTimes(50);
   });
 
-  it('animated capture pauses animations and advances frame time', async () => {
+  it('animated capture calls page.evaluate for each frame (no CDP animation control)', async () => {
     const { captureFrames } = await import(
       '../../../src/render/capture/index.js'
     );
@@ -148,12 +146,9 @@ describe('captureFrames', () => {
       isStatic: false,
     });
 
-    // Should pause animations via CDP
-    expect(mockCdpSend).toHaveBeenCalledWith('Animation.setPlaybackRate', {
-      playbackRate: 0,
-    });
-    // 10fps * 0.5s = 5 frames, so 5 evaluate calls to advance time
+    // 10fps * 0.5s = 5 frames, so 5 evaluate calls to update frame time
     expect(mockPage.evaluate).toHaveBeenCalledTimes(5);
+    // No CDP session should be created (no animation playback rate control)
   });
 
   it('sets page content with waitUntil networkidle0', async () => {

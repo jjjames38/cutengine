@@ -217,7 +217,7 @@ describe('buildTransitionOut', () => {
   });
 });
 
-// ---- 8. Full scene build ----
+// ---- 8. Full scene build (JS-based rendering) ----
 
 describe('buildScene', () => {
   it('produces valid HTML document with viewport matching output dimensions', () => {
@@ -252,11 +252,11 @@ describe('buildScene', () => {
 
     // First layer (text, index 0) should have z-index: 2 (totalLayers - 0)
     // Second layer (image, index 1) should have z-index: 1 (totalLayers - 1)
-    expect(html).toContain('#layer-0 { z-index: 2; }');
-    expect(html).toContain('#layer-1 { z-index: 1; }');
+    expect(html).toContain('#layer-0 { z-index: 2;');
+    expect(html).toContain('#layer-1 { z-index: 1;');
   });
 
-  it('applies Ken Burns effect to scene layers', () => {
+  it('embeds updateFrame script and layer timings', () => {
     const layer = makeImageLayer({
       effects: { motion: 'zoomIn' },
     });
@@ -267,11 +267,12 @@ describe('buildScene', () => {
     };
     const html = buildScene(scene, makeOutput());
 
-    expect(html).toContain('kb-zoomIn');
-    expect(html).toContain('@keyframes kb-zoomIn');
+    expect(html).toContain('window.updateFrame');
+    expect(html).toContain('window.layerTimings');
+    expect(html).toContain('"effect":"zoomIn"');
   });
 
-  it('applies filter effect to scene layers', () => {
+  it('applies filter effect to scene layers as static CSS', () => {
     const layer = makeImageLayer({
       effects: { filter: 'greyscale' },
     });
@@ -285,7 +286,7 @@ describe('buildScene', () => {
     expect(html).toContain('filter: grayscale(1)');
   });
 
-  it('applies transitions to scene layers', () => {
+  it('includes transition timing data in layerTimings', () => {
     const layer = makeImageLayer({
       timing: { start: 0, duration: 5, transitionIn: 'fade', transitionOut: 'fade' },
     });
@@ -296,8 +297,10 @@ describe('buildScene', () => {
     };
     const html = buildScene(scene, makeOutput());
 
-    expect(html).toContain('trans-in-fade');
-    expect(html).toContain('trans-out-fade');
+    expect(html).toContain('"transitionIn":"fade"');
+    expect(html).toContain('"transitionOut":"fade"');
+    expect(html).toContain('"transitionInDuration":1');
+    expect(html).toContain('"transitionOutDuration":1');
   });
 
   it('skips audio layers', () => {
@@ -345,8 +348,8 @@ describe('calcTimelineDuration', () => {
   });
 });
 
-describe('buildScene timing visibility', () => {
-  it('generates visibility keyframes for layers with different start times using wrapper divs', () => {
+describe('buildScene JS-based timing', () => {
+  it('embeds layer timing data for layers with different start times', () => {
     const scene: IRScene = {
       startTime: 0,
       duration: 10,
@@ -357,17 +360,17 @@ describe('buildScene timing visibility', () => {
     };
     const html = buildScene(scene, makeOutput(), 10);
 
-    // Both layers should have visibility animations on wrapper divs
-    expect(html).toContain('@keyframes vis-0');
-    expect(html).toContain('@keyframes vis-1');
-    // Wrapper divs get the visibility animation
-    expect(html).toContain('#layer-0-wrapper');
-    expect(html).toContain('#layer-1-wrapper');
-    expect(html).toContain('animation: vis-0 10s step-end forwards');
-    expect(html).toContain('animation: vis-1 10s step-end forwards');
+    // Both layers should have timing data in the script
+    expect(html).toContain('window.layerTimings');
+    expect(html).toContain('"id":"layer-0"');
+    expect(html).toContain('"id":"layer-1"');
+    // No wrapper divs or CSS keyframe animations
+    expect(html).not.toContain('layer-0-wrapper');
+    expect(html).not.toContain('layer-1-wrapper');
+    expect(html).not.toContain('@keyframes vis-');
   });
 
-  it('does not add visibility animation when layer covers entire timeline', () => {
+  it('all layers start with opacity 0 for JS-based control', () => {
     const scene: IRScene = {
       startTime: 0,
       duration: 5,
@@ -377,25 +380,12 @@ describe('buildScene timing visibility', () => {
     };
     const html = buildScene(scene, makeOutput(), 5);
 
-    // Single layer covering entire timeline: no visibility animation needed
-    expect(html).not.toContain('@keyframes vis-0');
-    expect(html).not.toContain('layer-0-wrapper');
+    expect(html).toContain('opacity: 0');
+    // The updateFrame script controls visibility
+    expect(html).toContain('window.updateFrame');
   });
 
-  it('sets wrapper opacity to 0 by default when visibility animation is applied', () => {
-    const scene: IRScene = {
-      startTime: 0,
-      duration: 10,
-      layers: [
-        makeTextLayer({ timing: { start: 3, duration: 4 } }),
-      ],
-    };
-    const html = buildScene(scene, makeOutput(), 10);
-
-    expect(html).toContain('#layer-0-wrapper { opacity: 0;');
-  });
-
-  it('adds animation-delay to KenBurns matching layer start time', () => {
+  it('includes KenBurns effect in layer timing data', () => {
     const scene: IRScene = {
       startTime: 0,
       duration: 10,
@@ -408,13 +398,15 @@ describe('buildScene timing visibility', () => {
     };
     const html = buildScene(scene, makeOutput(), 10);
 
-    expect(html).toContain('animation-delay: 3s');
-    expect(html).toContain('kb-zoomIn');
-    // KenBurns class should be on inner layer, visibility on wrapper
-    expect(html).toContain('layer-0-wrapper');
+    expect(html).toContain('"effect":"zoomIn"');
+    expect(html).toContain('"start":3');
+    expect(html).toContain('"duration":5');
+    // No CSS animation classes
+    expect(html).not.toContain('class="kb-zoomIn"');
+    expect(html).not.toContain('@keyframes kb-zoomIn');
   });
 
-  it('adds animation-delay to transition-in matching layer start time', () => {
+  it('includes transition timing data for fade transitions', () => {
     const scene: IRScene = {
       startTime: 0,
       duration: 10,
@@ -426,29 +418,29 @@ describe('buildScene timing visibility', () => {
     };
     const html = buildScene(scene, makeOutput(), 10);
 
-    expect(html).toContain('animation-delay: 2s');
-    expect(html).toContain('trans-in-fade');
+    expect(html).toContain('"transitionIn":"fade"');
+    expect(html).toContain('"transitionInDuration":1');
+    // No CSS animation classes for transitions
+    expect(html).not.toContain('class="trans-in-fade"');
   });
 
-  it('adds animation-delay to transition-out near layer end time', () => {
+  it('includes fadeSlow transition duration of 2s', () => {
     const scene: IRScene = {
       startTime: 0,
       duration: 10,
       layers: [
         makeImageLayer({
-          timing: { start: 2, duration: 5, transitionOut: 'fade' },
+          timing: { start: 2, duration: 5, transitionOut: 'fadeSlow' },
         }),
       ],
     };
     const html = buildScene(scene, makeOutput(), 10);
 
-    // fade transition-out duration is 1s, so delay = 2 + 5 - 1 = 6s
-    expect(html).toContain('animation-delay: 6s');
-    expect(html).toContain('trans-out-fade');
+    expect(html).toContain('"transitionOut":"fadeSlow"');
+    expect(html).toContain('"transitionOutDuration":2');
   });
 
-  it('subtitle layers appear and disappear at correct times', () => {
-    // Simulate a typical subtitle scenario: 3 captions appearing sequentially
+  it('subtitle layers have correct timing data for sequential display', () => {
     const scene: IRScene = {
       startTime: 0,
       duration: 15,
@@ -461,18 +453,15 @@ describe('buildScene timing visibility', () => {
     };
     const html = buildScene(scene, makeOutput(), 15);
 
-    // Background covers entire timeline - no visibility anim
-    expect(html).not.toContain('@keyframes vis-0');
-    // Each subtitle gets its own visibility animation on wrappers
-    expect(html).toContain('@keyframes vis-1');
-    expect(html).toContain('@keyframes vis-2');
-    expect(html).toContain('@keyframes vis-3');
-    expect(html).toContain('layer-1-wrapper');
-    expect(html).toContain('layer-2-wrapper');
-    expect(html).toContain('layer-3-wrapper');
+    // All layers should have timing data, no wrappers
+    expect(html).toContain('"id":"layer-0"');
+    expect(html).toContain('"id":"layer-1"');
+    expect(html).toContain('"id":"layer-2"');
+    expect(html).toContain('"id":"layer-3"');
+    expect(html).not.toContain('wrapper');
   });
 
-  it('KenBurns and visibility work together without CSS conflicts', () => {
+  it('KenBurns and visibility work together via JS without CSS conflicts', () => {
     const scene: IRScene = {
       startTime: 0,
       duration: 18,
@@ -493,25 +482,16 @@ describe('buildScene timing visibility', () => {
     };
     const html = buildScene(scene, makeOutput(), 18);
 
-    // Each layer should have wrapper for visibility and inner class for KenBurns
-    expect(html).toContain('layer-0-wrapper');
-    expect(html).toContain('kb-zoomIn');
-    expect(html).toContain('layer-1-wrapper');
-    expect(html).toContain('kb-slideLeft');
-    expect(html).toContain('layer-2-wrapper');
-    expect(html).toContain('kb-zoomOut');
-
-    // Visibility animates opacity on wrapper, KenBurns animates transform on inner
-    // These should not conflict because they target different elements
-    expect(html).toContain('@keyframes vis-0');
-    expect(html).toContain('@keyframes vis-1');
-    expect(html).toContain('@keyframes vis-2');
-    expect(html).toContain('@keyframes kb-zoomIn');
-    expect(html).toContain('@keyframes kb-slideLeft');
-    expect(html).toContain('@keyframes kb-zoomOut');
+    // All effects in layer timings data, no CSS animation classes
+    expect(html).toContain('"effect":"zoomIn"');
+    expect(html).toContain('"effect":"slideLeft"');
+    expect(html).toContain('"effect":"zoomOut"');
+    expect(html).toContain('window.updateFrame');
+    expect(html).not.toContain('wrapper');
+    expect(html).not.toContain('@keyframes vis-');
   });
 
-  it('fade transition and visibility work together via wrapper div separation', () => {
+  it('fade transition and KenBurns work together via JS', () => {
     const scene: IRScene = {
       startTime: 0,
       duration: 12,
@@ -528,13 +508,11 @@ describe('buildScene timing visibility', () => {
     };
     const html = buildScene(scene, makeOutput(), 12);
 
-    // Visibility on wrappers
-    expect(html).toContain('layer-0-wrapper');
-    expect(html).toContain('layer-1-wrapper');
-    // Transitions and KenBurns on inner divs
-    expect(html).toContain('trans-in-fade');
-    expect(html).toContain('trans-out-fade');
-    expect(html).toContain('kb-zoomIn');
-    expect(html).toContain('kb-zoomOut');
+    // All handled via JS, not CSS animations
+    expect(html).toContain('"effect":"zoomIn"');
+    expect(html).toContain('"effect":"zoomOut"');
+    expect(html).toContain('"transitionIn":"fade"');
+    expect(html).toContain('"transitionOut":"fade"');
+    expect(html).toContain('window.updateFrame');
   });
 });

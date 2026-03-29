@@ -147,21 +147,20 @@ describe('Beyond Orbit Compatibility', () => {
     expect(bgmClip!.volumeEffect).toBe('fadeIn');
   });
 
-  it('Scene Builder produces HTML with zoomIn keyframes and boost filter', () => {
+  it('Scene Builder produces HTML with zoomIn effect data and boost filter', () => {
     const ir = parseTimeline(beyondOrbitPayload);
     const html = buildScene(ir.scenes[0], ir.output);
 
-    // Should contain Ken Burns zoomIn animation keyframes
-    expect(html).toContain('zoomIn');
-    expect(html).toContain('scale(1)');
-    expect(html).toContain('scale(1.3)');
+    // Should contain Ken Burns zoomIn in layer timing data (JS-based rendering)
+    expect(html).toContain('"effect":"zoomIn"');
+    expect(html).toContain('window.updateFrame');
 
     // Should contain boost filter CSS
     expect(html).toContain('contrast(1.2)');
     expect(html).toContain('saturate(1.3)');
 
-    // Should contain transition classes
-    expect(html).toContain('fadeSlow');
+    // Should contain transition data in layerTimings
+    expect(html).toContain('"transitionOut":"fadeSlow"');
   });
 
   it('9:16 Shorts payload accepted with correct resolution (1080x1920)', async () => {
