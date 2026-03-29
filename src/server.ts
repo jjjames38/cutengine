@@ -14,6 +14,10 @@ import { createRenderWorker } from './queue/workers/render-worker.js';
 import { createIngestWorker } from './queue/workers/ingest-worker.js';
 import { createCreateWorker } from './queue/workers/create-worker.js';
 import { createQueues } from './queue/queues.js';
+import { batchRoutes } from './api/extended/batch.js';
+import { previewRoutes } from './api/extended/preview.js';
+import { queueStatusRoutes } from './api/extended/queue-status.js';
+import { metricsRoutes } from './api/metrics.js';
 import { config } from './config/index.js';
 import type { Worker } from 'bullmq';
 
@@ -55,6 +59,12 @@ export async function createServer(opts?: { testing?: boolean }) {
   await app.register(uploadRoutes);
   await app.register(assetsRoutes);
   await app.register(createRoutes);
+
+  // Register extended API routes
+  await app.register(batchRoutes);
+  await app.register(previewRoutes);
+  await app.register(queueStatusRoutes);
+  await app.register(metricsRoutes);
 
   // Start render worker and queues (skip in test mode)
   if (!opts?.testing) {
