@@ -21,6 +21,7 @@ import { queueStatusRoutes } from './api/extended/queue-status.js';
 import { ecosystemRoutes } from './api/extended/ecosystem.js';
 import { metricsRoutes } from './api/metrics.js';
 import { config } from './config/index.js';
+import { getRedisConnection } from './queue/connection.js';
 import type { Worker } from 'bullmq';
 
 export async function createServer(opts?: { testing?: boolean }) {
@@ -138,16 +139,62 @@ export async function createServer(opts?: { testing?: boolean }) {
       app.log.info('VisualCore GPU pipeline initialized');
     }
 
+    // ── GPU Scheduler (opt-in) ──
+    let gpuTracker: any = null;
+    let gpuSchedulerWorker: any = null;
+
+    if (config.gpuScheduler.enabled) {
+      const { VRAMBudgetTracker } = await import('./gpu/vram-budget-tracker.js');
+      const { createGPUSchedulerWorker } = await import('./gpu/scheduler-worker.js');
+
+      gpuTracker = new VRAMBudgetTracker(getRedisConnection());
+      await gpuTracker.initialize();
+      gpuTracker.startCleanupLoop();
+
+      gpuSchedulerWorker = createGPUSchedulerWorker(gpuTracker, gpuManager);
+
+      app.log.info('GPU Scheduler initialized', { gpu_id: config.gpuScheduler.gpu_id });
+    }
+
     const createWorker = createCreateWorker(providerRouter ?? undefined);
     (app as any).createWorker = createWorker;
+
+    // GPU status endpoint
+    app.get('/api/gpu/status', async () => {
+      if (!gpuTracker) {
+        return { error: 'GPU scheduler not enabled' };
+      }
+      const status = await gpuTracker.getStatus();
+      if (gpuManager) {
+        const mgr = gpuManager.getStatus();
+        status.current_model = mgr.current_model;
+        status.is_swapping = mgr.is_swapping;
+        status.swap_queue_depth = mgr.swap_queue_depth;
+      }
+      return status;
+    });
 
     app.addHook('onClose', async () => {
       await renderWorker.close();
       await ingestWorker.close();
       await createWorker.close();
+
+      // GPU scheduler graceful shutdown
+      if (gpuSchedulerWorker) {
+        await gpuSchedulerWorker.close();
+      }
+      if (gpuTracker) {
+        gpuTracker.stopCleanupLoop();
+        const status = await gpuTracker.getStatus();
+        for (const model of Object.keys(status.reservations)) {
+          if (model !== 'fish-speech') {
+            await gpuTracker.release(model);
+          }
+        }
+      }
+
       await Promise.all(Object.values(queues).map((q: any) => q.close()));
 
-      // Cleanup GPU resources
       if (gpuManager) {
         await gpuManager.unloadAll();
       }
