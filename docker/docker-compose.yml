@@ -33,7 +33,7 @@ services:
       - "3001:3000"
     environment:
       - MAX_CONCURRENT_SESSIONS=4
-      - CONNECTION_TIMEOUT=600000
+      - CONNECTION_TIMEOUT=3600000
 
 volumes:
   assets:
