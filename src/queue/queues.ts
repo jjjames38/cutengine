@@ -7,6 +7,7 @@ export interface AppQueues {
   ingest: Queue;
   create: Queue;
   transfer: Queue;
+  'gpu-scheduler': Queue;
 }
 
 const defaultJobOptions = {
@@ -40,6 +41,15 @@ export function createQueues(conn?: IORedis): AppQueues {
     transfer: new Queue('transfer', {
       ...baseOpts,
       defaultJobOptions: { ...defaultJobOptions, timeout: 120000 },
+    }),
+    'gpu-scheduler': new Queue('gpu-scheduler', {
+      ...baseOpts,
+      defaultJobOptions: {
+        ...defaultJobOptions,
+        attempts: 5,
+        backoff: { type: 'exponential' as const, delay: 5000 },
+        timeout: 600000,
+      },
     }),
   };
 }
