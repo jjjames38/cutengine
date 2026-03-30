@@ -87,4 +87,13 @@ export const config = {
     port: parseInt(process.env.CUBEINSIGHT_PORT ?? '8000', 10),
     api_key: process.env.CUBEINSIGHT_API_KEY,
   },
+  gpuScheduler: {
+    enabled: process.env.GPU_SCHEDULER_ENABLED === 'true',
+    gpu_id: process.env.GPU_ID ?? 'gpu-0',
+    total_gb: parseInt(process.env.GPU_TOTAL_GB ?? '24', 10),
+    safety_margin_gb: parseInt(process.env.GPU_SAFETY_MARGIN_GB ?? '2', 10),
+    ttl_seconds: parseInt(process.env.GPU_RESERVATION_TTL ?? '60', 10),
+    cleanup_interval_seconds: parseInt(process.env.GPU_CLEANUP_INTERVAL ?? '30', 10),
+    max_swap_timeout_ms: parseInt(process.env.GPU_MAX_SWAP_TIMEOUT ?? '30000', 10),
+  },
 } as const;
