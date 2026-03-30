@@ -7,7 +7,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { VoiceCoreTTSProvider } from '../../src/create/providers/voicecore-tts.js';
-import type { GenerateRequest, ProviderName } from '../../src/create/providers/types.js';
+import type { GenerateRequest, ProviderName } from '@gstack/types';
 
 // ─── VoiceCoreTTSProvider ───
 

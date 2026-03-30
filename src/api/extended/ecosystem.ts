@@ -12,7 +12,7 @@ import { FastifyInstance } from 'fastify';
 import { config } from '../../config/index.js';
 import { ProfileCoreProvider } from '../../create/providers/profilecore.js';
 import { CubeInsightProvider } from '../../create/providers/cubeinsight.js';
-import type { BrowserProfile } from '../../shared/types.js';
+import type { BrowserProfile } from '@gstack/types';
 
 export async function ecosystemRoutes(app: FastifyInstance) {
   // ── ProfileCore endpoints ──
