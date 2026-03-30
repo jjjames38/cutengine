@@ -19,23 +19,7 @@ export interface CaptureResult {
 }
 
 // Recycle the Puppeteer page every N frames to prevent Chromium OOM.
-const PAGE_RECYCLE_INTERVAL = 1000;
-
-// Load HTML content with timeout protection
-async function loadContent(page: any, html: string, isFirst: boolean): Promise<void> {
-  // Use setContent with a race against a hard timeout
-  const loadPromise = page.setContent(html, {
-    waitUntil: isFirst ? 'networkidle2' : 'domcontentloaded',
-    timeout: isFirst ? 60000 : 10000,
-  });
-
-  // Hard timeout: if setContent doesn't resolve, force continue
-  const timeoutMs = isFirst ? 60000 : 10000;
-  await Promise.race([
-    loadPromise,
-    new Promise<void>(resolve => setTimeout(resolve, timeoutMs)),
-  ]).catch(() => {}); // swallow any error, proceed with whatever loaded
-}
+const PAGE_RECYCLE_INTERVAL = 500;
 
 export async function captureFrames(opts: CaptureOptions): Promise<CaptureResult> {
   mkdirSync(opts.outputDir, { recursive: true });
@@ -43,7 +27,11 @@ export async function captureFrames(opts: CaptureOptions): Promise<CaptureResult
   if (opts.isStatic) {
     const page = await acquirePage(opts.width, opts.height);
     try {
-      await loadContent(page, opts.html, true);
+      // First load: networkidle2 with generous timeout, force continue if hangs
+    await Promise.race([
+      page.setContent(opts.html, { waitUntil: 'networkidle2', timeout: 60000 }),
+      new Promise<void>(r => setTimeout(r, 60000)),
+    ]).catch(() => {});
       await page.evaluate((time: number) => {
         if (typeof (window as any).updateFrame === 'function') {
           (window as any).updateFrame(time);
@@ -64,16 +52,25 @@ export async function captureFrames(opts: CaptureOptions): Promise<CaptureResult
   let pageFrameCount = 0;
 
   try {
-    await loadContent(page, opts.html, true);
+    // First load: networkidle2 with generous timeout, force continue if hangs
+    await Promise.race([
+      page.setContent(opts.html, { waitUntil: 'networkidle2', timeout: 60000 }),
+      new Promise<void>(r => setTimeout(r, 60000)),
+    ]).catch(() => {});
 
     for (let i = 0; i < totalFrames; i++) {
-      // Periodic GC instead of page recycle (avoids setContent hang on reload)
-      if (pageFrameCount > 0 && pageFrameCount % PAGE_RECYCLE_INTERVAL === 0) {
-        try {
-          const cdp = await page.createCDPSession();
-          await cdp.send('HeapProfiler.collectGarbage');
-          await cdp.detach();
-        } catch {} // ignore GC errors
+      // Recycle page every N frames — close old, open new, reload HTML
+      if (pageFrameCount >= PAGE_RECYCLE_INTERVAL) {
+        await releasePage(page);
+        page = await acquirePage(opts.width, opts.height);
+        // Navigate to blank first to fully reset, then set content
+        await page.goto('about:blank').catch(() => {});
+        // setContent with short timeout — if it hangs, force continue
+        await Promise.race([
+          page.setContent(opts.html, { waitUntil: 'load', timeout: 30000 }),
+          new Promise<void>(r => setTimeout(r, 30000)),
+        ]).catch(() => {});
+        pageFrameCount = 0;
       }
 
       const currentTime = i / opts.fps;
