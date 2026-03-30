@@ -426,13 +426,39 @@ docs/
     plans/         # Implementation plan
 ```
 
+## Roadmap / TODO
+
+### Immediate (Next)
+- [ ] n8n에서 테스트 에피소드 1개 RenderForge로 실행 → Shotstack 결과물과 품질 비교
+- [ ] 기존 8개 실패 테스트 수정 → 331개 전부 통과
+- [ ] 9:16 Shorts 렌더링 테스트 (1080x1920)
+- [ ] 풀 에피소드 렌더링 (10분+, 18장면) 안정성 테스트
+
+### Near-term
+- [ ] RunPod RTX 4090 배포 (VoiceCore + VisualCore 연동)
+- [ ] Chromium 메모리/타임아웃 최적화 (장시간 렌더링)
+- [ ] n8n 워크플로우 전체 270채널 전환
+- [ ] ElevenLabs → VoiceCore(Fish Speech) 전환
+
+### Medium-term
+- [ ] CubeInsight → RenderForge 트렌드 데이터 피드백 루프
+- [ ] ProfileCore HTTP API 서버 (v1.1)
+- [ ] 9:16 Shorts 자동 추출 엔진 최적화
+- [ ] LoRA 학습 데이터 준비 (9 Tier별 스타일)
+
+### Long-term
+- [ ] 글로벌 SaaS 런칭 준비 (오픈코어 모델)
+- [ ] 다국어 확장 (JP, ES 콘텐츠)
+- [ ] Product Hunt / AppSumo 런칭
+- [ ] 온프레미스 RTX 4090 서버 vs 클라우드 결정
+
 ## Development
 
 ```bash
 pnpm install
 docker compose -f docker/docker-compose.dev.yml up -d
 pnpm dev            # Start with hot reload
-pnpm test           # Run all 270 tests
+pnpm test           # Run all 323 tests
 pnpm test:watch     # Watch mode
 pnpm build          # TypeScript compile
 ```
