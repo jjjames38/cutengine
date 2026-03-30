@@ -48,6 +48,57 @@ export function createCreateWorker(router?: ProviderRouter) {
         return { url: result.output?.url, type: 'audio' };
       }
 
+      // GPU tasks: route to gpu-scheduler queue for VRAM-safe processing
+      if (router && config.gpuScheduler.enabled) {
+        const { calculatePriority, resolveModel } = await import('../../gpu/priority-calculator.js');
+        const { Queue, QueueEvents } = await import('bullmq');
+
+        const { model, vram_gb } = resolveModel(request.type);
+        const tier = (request as any).tier ?? 'T5';
+        const priority = calculatePriority(tier, request.type);
+
+        const gpuQueue = new Queue('gpu-scheduler', {
+          connection: getRedisConnection(),
+        });
+
+        const gpuJob = await gpuQueue.add('gpu-generate', {
+          type: request.type,
+          model_needed: model,
+          vram_gb,
+          tier,
+          channel_id: (request as any).channel_id ?? '',
+          visual_priority: (request as any).visual_priority ?? 'normal',
+          request: {
+            prompt: request.prompt,
+            src: request.src,
+            style: (request as any).style,
+            aspect_ratio: (request as any).aspect_ratio,
+            resolution: (request as any).resolution,
+            duration: request.duration,
+            seed: (request as any).seed,
+            upscale_factor: (request as any).upscale_factor,
+            is_thumbnail: (request as any).is_thumbnail,
+          },
+          callback_url: (request as any).callback_url,
+        }, { priority });
+
+        // Wait for gpu-scheduler to complete
+        const queueEvents = new QueueEvents('gpu-scheduler', { connection: getRedisConnection() });
+        try {
+          const result = await gpuJob.waitUntilFinished(queueEvents, 600_000);
+
+          if (record) {
+            record.status = 'done';
+            record.resultUrl = result?.url;
+            record.resultType = result?.type;
+            record.updatedAt = new Date().toISOString();
+          }
+          return result;
+        } finally {
+          await queueEvents.close();
+        }
+      }
+
       // GPU tasks: use ProviderRouter for local GPU inference (sequential)
       if (router) {
         const provider = await router.route({
