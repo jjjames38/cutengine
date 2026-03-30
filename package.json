@@ -7,7 +7,9 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "vitest run tests/e2e/pipeline.test.ts",
+    "test:smoke": "vitest run tests/e2e/pipeline.smoke.test.ts --timeout 300000"
   },
   "engines": {
     "node": ">=20"
