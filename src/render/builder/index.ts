@@ -148,13 +148,13 @@ window.updateFrame = function(time) {
         case 'zoomOut':
           transform = 'scale(' + (1.12 - 0.1 * progress) + ')'; break;
         case 'slideLeft':
-          transform = 'scale(1.15) translateX(' + (-5 * progress) + '%)'; break;
+          transform = 'scale(1.25) translateX(' + (-3 * progress) + '%)'; break;
         case 'slideRight':
-          transform = 'scale(1.15) translateX(' + (5 * progress) + '%)'; break;
+          transform = 'scale(1.25) translateX(' + (3 * progress) + '%)'; break;
         case 'slideUp':
-          transform = 'scale(1.15) translateY(' + (-5 * progress) + '%)'; break;
+          transform = 'scale(1.25) translateY(' + (-3 * progress) + '%)'; break;
         case 'slideDown':
-          transform = 'scale(1.15) translateY(' + (5 * progress) + '%)'; break;
+          transform = 'scale(1.25) translateY(' + (3 * progress) + '%)'; break;
       }
 
       // Prepend any base transform from the element

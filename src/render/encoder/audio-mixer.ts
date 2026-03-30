@@ -73,7 +73,7 @@ export function buildAudioMix(audio: IRAudioMix, totalDuration: number): AudioMi
   }
 
   const mixInputs = Array.from({ length: streamCount }, (_, i) => `[a${i + 1}]`).join('');
-  filters.push(`${mixInputs}amix=inputs=${streamCount}:duration=longest[aout]`);
+  filters.push(`${mixInputs}amix=inputs=${streamCount}:duration=longest:normalize=0[aout]`);
 
   return {
     inputArgs,
