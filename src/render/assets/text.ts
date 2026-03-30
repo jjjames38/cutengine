@@ -8,6 +8,14 @@ import type { RenderedElement } from './image.js';
  * Uses offset values when provided for precise positioning.
  */
 function mapVerticalPosition(position?: string, offsetY?: number): string {
+  // Shotstack offset.y: positive = move UP from anchor, negative = move DOWN
+  // position: 'center' + offset.y: 0.38 = center moved 38% upward = top ~12%
+  // position: 'center' + offset.y: -0.30 = center moved 30% downward = top ~80%
+  if (position === 'center' && offsetY !== undefined && offsetY !== 0) {
+    // Center is 50%, offset moves up (positive) or down (negative)
+    const topPercent = 50 - (offsetY * 100);
+    return `top: ${topPercent}%; transform: translateY(-50%);`;
+  }
   const offset = offsetY !== undefined ? Math.abs(offsetY) * 100 : undefined;
   switch (position) {
     case 'top':

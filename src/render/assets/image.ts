@@ -38,7 +38,7 @@ export function renderImage(layer: IRLayer, layerIndex: number): RenderedElement
   if (offsetX !== 0) transforms.push(`translateX(${offsetX * 100}%)`);
   if (offsetY !== 0) transforms.push(`translateY(${offsetY * -100}%)`);
 
-  const transformCss = transforms.length > 0 ? `transform: ${transforms.join(' ')};` : '';
+  const transformStr = transforms.length > 0 ? transforms.join(' ') : '';
 
   const css = `
   #${id} {
@@ -46,10 +46,11 @@ export function renderImage(layer: IRLayer, layerIndex: number): RenderedElement
     top: 0; left: 0;
     width: 100%; height: 100%;
     object-fit: ${objectFit};
-    ${transformCss}
+    ${transformStr ? `transform: ${transformStr};` : ''}
   }`;
 
-  const html = `<img id="${id}" src="${src}" />`;
+  // Store base transform in data attribute so KenBurns JS can prepend it
+  const html = `<img id="${id}" src="${src}" ${transformStr ? `data-base-transform="${transformStr}"` : ''} />`;
 
   return { html, css };
 }
