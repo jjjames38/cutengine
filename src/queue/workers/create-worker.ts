@@ -2,10 +2,15 @@ import { Worker, Job } from 'bullmq';
 import { getRedisConnection } from '../connection.js';
 import { generateAIAsset } from '../../render/assets/ai.js';
 import { generations } from '../../api/create/generate.js';
+import { config } from '../../config/index.js';
 import type { AIGenerateRequest, ProviderConfig } from '../../render/assets/ai.js';
 import type { ProviderRouter } from '../../create/providers/router.js';
 
 export function createCreateWorker(router?: ProviderRouter) {
+  // GPU concurrency: default 1 to prevent model swap thrashing on single GPU
+  // TTS (Fish Speech) is always-resident and doesn't need GPU swaps
+  const gpuConcurrency = config.gpu.enabled ? config.gpu.concurrency : 2;
+
   const worker = new Worker('create', async (job: Job) => {
     const { generationId, request, providerConfig } = job.data as {
       generationId: string;
@@ -20,8 +25,30 @@ export function createCreateWorker(router?: ProviderRouter) {
     }
 
     try {
-      // When ProviderRouter is available and request has GPU-compatible fields,
-      // use the VisualCore pipeline for local GPU inference.
+      // TTS requests: Fish Speech is always-resident (2GB), no GPU swap needed.
+      // Process immediately without waiting for GPU queue.
+      if (router && request.type === 'tts') {
+        const provider = await router.route({
+          type: 'tts',
+          prompt: request.prompt ?? '',
+          style: (request as any).style,
+        });
+        const result = await provider.generate({
+          type: 'tts',
+          prompt: request.prompt ?? '',
+          style: (request as any).style,
+        });
+        if (record) {
+          record.status = result.status === 'done' ? 'done' : 'failed';
+          record.resultUrl = result.output?.url;
+          record.resultType = 'audio';
+          record.error = result.error;
+          record.updatedAt = new Date().toISOString();
+        }
+        return { url: result.output?.url, type: 'audio' };
+      }
+
+      // GPU tasks: use ProviderRouter for local GPU inference (sequential)
       if (router) {
         const provider = await router.route({
           type: request.type as 'text-to-image' | 'image-to-video' | 'upscale',
@@ -83,7 +110,7 @@ export function createCreateWorker(router?: ProviderRouter) {
     }
   }, {
     connection: getRedisConnection(),
-    concurrency: 2,
+    concurrency: gpuConcurrency,
   });
 
   return worker;

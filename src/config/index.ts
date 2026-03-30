@@ -50,6 +50,7 @@ export const config = {
     enabled: process.env.GPU_ENABLED === 'true',
     vramBudget: parseInt(process.env.GPU_VRAM_BUDGET ?? '22528', 10),
     swapStrategy: process.env.GPU_SWAP_STRATEGY ?? 'queue',
+    concurrency: parseInt(process.env.GPU_CONCURRENCY ?? '1', 10),
   },
   comfyui: {
     host: process.env.COMFYUI_HOST ?? 'localhost',
