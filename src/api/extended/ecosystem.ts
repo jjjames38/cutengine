@@ -3,11 +3,16 @@
 // Extended API routes that expose ecosystem integrations.
 // All routes are under /x/v1/profiles/* and /x/v1/trends/*.
 // Returns 503 when the respective service is disabled.
+//
+// Ecosystem API responses use snake_case field names per gstack-ecosystem-os
+// REFACTORING_SPEC. Shotstack-compatible endpoints (edit/serve/ingest) retain
+// camelCase where the Shotstack API requires it.
 
 import { FastifyInstance } from 'fastify';
 import { config } from '../../config/index.js';
 import { ProfileCoreProvider } from '../../create/providers/profilecore.js';
 import { CubeInsightProvider } from '../../create/providers/cubeinsight.js';
+import type { BrowserProfile } from '../../shared/types.js';
 
 export async function ecosystemRoutes(app: FastifyInstance) {
   // ── ProfileCore endpoints ──
@@ -33,17 +38,17 @@ export async function ecosystemRoutes(app: FastifyInstance) {
 
   app.post('/x/v1/profiles/launch', async (req, reply) => {
     if (!profilecore) return reply.status(503).send({ success: false, message: 'ProfileCore is not enabled' });
-    const body = req.body as { profileId: string; url?: string };
-    if (!body.profileId) return reply.status(400).send({ success: false, message: 'profileId is required' });
-    const result = await profilecore.launchProfile(body.profileId, body.url);
+    const body = req.body as { profile_id: string; url?: string };
+    if (!body.profile_id) return reply.status(400).send({ success: false, message: 'profile_id is required' });
+    const result = await profilecore.launchProfile(body.profile_id, body.url);
     return { success: true, response: result };
   });
 
   app.post('/x/v1/profiles/close', async (req, reply) => {
     if (!profilecore) return reply.status(503).send({ success: false, message: 'ProfileCore is not enabled' });
-    const body = req.body as { profileId: string };
-    if (!body.profileId) return reply.status(400).send({ success: false, message: 'profileId is required' });
-    await profilecore.closeProfile(body.profileId);
+    const body = req.body as { profile_id: string };
+    if (!body.profile_id) return reply.status(400).send({ success: false, message: 'profile_id is required' });
+    await profilecore.closeProfile(body.profile_id);
     return { success: true, message: 'Profile closed' };
   });
 

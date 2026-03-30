@@ -213,6 +213,20 @@ Compatible pairs: Fish Speech + Flux (10GB), Fish Speech + Hunyuan (16GB with CP
 
 **Cost:** ~$50/month (RunPod RTX 4090) vs $5,522/month with external APIs.
 
+## Gstack Infinity Loop
+
+RenderForge is the **Assembly** stage in the Gstack Infinity Loop:
+
+```
+Script Extraction (ReelsScriptExtractor)
+  → Trend Analysis (CubeInsight)
+  → Script Generation (N8N + Claude AI)
+  → Local Manufacturing (VoiceCore + VisualCore)
+  → **Video Assembly (RenderForge)** ← You are here
+  → Safe Distribution (ProfileCore)
+  → Revenue → Back to CubeInsight
+```
+
 ## Ecosystem — 5 Projects Connected
 
 RenderForge connects all 5 projects in the YouTube 270-channel automation pipeline:
@@ -447,6 +461,7 @@ docs/
 - [ ] LoRA 학습 데이터 준비 (9 Tier별 스타일)
 
 ### Long-term
+- [ ] WebGL GPU acceleration for Ken Burns/transitions (potential 2x speed boost)
 - [ ] 글로벌 SaaS 런칭 준비 (오픈코어 모델)
 - [ ] 다국어 확장 (JP, ES 콘텐츠)
 - [ ] Product Hunt / AppSumo 런칭
