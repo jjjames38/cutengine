@@ -444,20 +444,30 @@ docs/
 
 ## Roadmap & TODO
 
-### Immediate (Next)
+### Completed ✅
 - [x] n8n에서 테스트 에피소드 1개 RenderForge로 실행 → Shotstack 결과물과 품질 비교
 - [x] 기존 8개 실패 테스트 수정 → 331개 전부 통과
-- [x] 9:16 Shorts 렌더링 테스트 (1080x1920)
+- [x] 9:16 Shorts 렌더링 테스트 (1080x1920, 기획안대로)
 - [x] 풀 에피소드 렌더링 (3.4분, 5095프레임) 안정성 테스트 통과
+- [x] Chromium 메모리/타임아웃 최적화 (CONNECTION_TIMEOUT 1h + domcontentloaded)
+- [x] BullMQ 직렬화 큐 — GPU OOM 방지 (concurrency 1 + TTS fast-path)
+- [x] VisualCore 통합 (Flux Klein + HunyuanVideo + GPU Memory Manager)
+- [x] VoiceCore 통합 (Fish Speech TTS)
+- [x] ProfileCore + CubeInsight 에코시스템 연동
+- [x] gstack-ecosystem-os 표준 반영 (snake_case, shared types)
+
+### Immediate (Next)
+- [ ] n8n 워크플로우 실제 에피소드 렌더링 (테스트 데이터가 아닌 실제 n8n 파이프라인)
+- [ ] 자막 35자 단위 분할 적용 (현재 전체 문장 표시 → 화면 초과)
+- [ ] 10분+ 실제 에피소드 렌더링 테스트 (18장면, 실제 에셋)
 
 ### Near-term
 - [ ] RunPod RTX 4090 배포 (VoiceCore + VisualCore 연동)
-- [x] Chromium 메모리/타임아웃 최적화 (CONNECTION_TIMEOUT 1h + domcontentloaded)
 - [ ] n8n 워크플로우 전체 270채널 전환
 - [ ] ElevenLabs → VoiceCore(Fish Speech) 전환
 
 ### Medium-term
-- [ ] CubeInsight → RenderForge 트랜드 데이터 피드백 루프
+- [ ] CubeInsight → RenderForge 트렌드 데이터 피드백 루프
 - [ ] ProfileCore HTTP API 서버 (v1.1)
 - [ ] 9:16 Shorts 자동 추출 엔진 최적화
 - [ ] LoRA 학습 데이터 준비 (9 Tier별 스타일)
