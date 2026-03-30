@@ -18,39 +18,50 @@ export interface CaptureResult {
   framePattern: string;
 }
 
+// Recycle the Puppeteer page every N frames to prevent Chromium OOM.
+// At ~1MB per screenshot buffer, 500 frames ≈ 500MB accumulated.
+const PAGE_RECYCLE_INTERVAL = 500;
+
 export async function captureFrames(opts: CaptureOptions): Promise<CaptureResult> {
   mkdirSync(opts.outputDir, { recursive: true });
 
-  const page = await acquirePage(opts.width, opts.height);
-
-  try {
-    await page.setContent(opts.html, { waitUntil: 'networkidle0' });
-
-    if (opts.isStatic) {
-      // For static scenes, call updateFrame at time 0 to show layers, then screenshot
+  if (opts.isStatic) {
+    const page = await acquirePage(opts.width, opts.height);
+    try {
+      await page.setContent(opts.html, { waitUntil: 'networkidle0' });
       await page.evaluate((time: number) => {
         if (typeof (window as any).updateFrame === 'function') {
           (window as any).updateFrame(time);
         }
       }, 0);
-
       await page.screenshot({
         path: join(opts.outputDir, 'frame_00001.png'),
         type: 'png',
       });
-      return {
-        frameDir: opts.outputDir,
-        frameCount: 1,
-        framePattern: 'frame_%05d.png',
-      };
+      return { frameDir: opts.outputDir, frameCount: 1, framePattern: 'frame_%05d.png' };
+    } finally {
+      await releasePage(page);
     }
+  }
 
-    const totalFrames = Math.ceil(opts.fps * opts.duration);
+  const totalFrames = Math.ceil(opts.fps * opts.duration);
+  let page = await acquirePage(opts.width, opts.height);
+  let pageFrameCount = 0;
+
+  try {
+    await page.setContent(opts.html, { waitUntil: 'networkidle0' });
 
     for (let i = 0; i < totalFrames; i++) {
+      // Recycle page every N frames to prevent Chromium memory buildup
+      if (pageFrameCount >= PAGE_RECYCLE_INTERVAL) {
+        await releasePage(page);
+        page = await acquirePage(opts.width, opts.height);
+        await page.setContent(opts.html, { waitUntil: 'networkidle0' });
+        pageFrameCount = 0;
+      }
+
       const currentTime = i / opts.fps;
 
-      // Update frame via JavaScript (fast! ~1-5ms)
       await page.evaluate((time: number) => {
         if (typeof (window as any).updateFrame === 'function') {
           (window as any).updateFrame(time);
@@ -62,13 +73,11 @@ export async function captureFrames(opts: CaptureOptions): Promise<CaptureResult
         path: join(opts.outputDir, `frame_${frameNum}.png`),
         type: 'png',
       });
+
+      pageFrameCount++;
     }
 
-    return {
-      frameDir: opts.outputDir,
-      frameCount: totalFrames,
-      framePattern: 'frame_%05d.png',
-    };
+    return { frameDir: opts.outputDir, frameCount: totalFrames, framePattern: 'frame_%05d.png' };
   } finally {
     await releasePage(page);
   }
