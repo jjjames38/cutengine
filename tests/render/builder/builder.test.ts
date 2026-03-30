@@ -185,21 +185,21 @@ describe('buildTransitionIn', () => {
     expect(result).not.toBeNull();
     expect(result!.keyframes).toContain('opacity: 0');
     expect(result!.keyframes).toContain('opacity: 1');
-    expect(result!.duration).toBe(0.5);
+    expect(result!.duration).toBe(0.3);
   });
 
-  it('fadeSlow uses 1s duration', () => {
+  it('fadeSlow uses 0.6s duration', () => {
     const result = buildTransitionIn('fadeSlow');
     expect(result).not.toBeNull();
-    expect(result!.keyframes).toContain('1s');
-    expect(result!.duration).toBe(1);
+    expect(result!.keyframes).toContain('0.6s');
+    expect(result!.duration).toBe(0.6);
   });
 
-  it('fadeFast uses 0.25s duration', () => {
+  it('fadeFast uses 0.15s duration', () => {
     const result = buildTransitionIn('fadeFast');
     expect(result).not.toBeNull();
-    expect(result!.keyframes).toContain('0.25s');
-    expect(result!.duration).toBe(0.25);
+    expect(result!.keyframes).toContain('0.15s');
+    expect(result!.duration).toBe(0.15);
   });
 
   it('returns null for unknown transitions', () => {
@@ -299,8 +299,8 @@ describe('buildScene', () => {
 
     expect(html).toContain('"transitionIn":"fade"');
     expect(html).toContain('"transitionOut":"fade"');
-    expect(html).toContain('"transitionInDuration":0.5');
-    expect(html).toContain('"transitionOutDuration":0.5');
+    expect(html).toContain('"transitionInDuration":0.3');
+    expect(html).toContain('"transitionOutDuration":0.3');
   });
 
   it('skips audio layers', () => {
@@ -419,7 +419,7 @@ describe('buildScene JS-based timing', () => {
     const html = buildScene(scene, makeOutput(), 10);
 
     expect(html).toContain('"transitionIn":"fade"');
-    expect(html).toContain('"transitionInDuration":0.5');
+    expect(html).toContain('"transitionInDuration":0.3');
     // No CSS animation classes for transitions
     expect(html).not.toContain('class="trans-in-fade"');
   });
@@ -437,7 +437,7 @@ describe('buildScene JS-based timing', () => {
     const html = buildScene(scene, makeOutput(), 10);
 
     expect(html).toContain('"transitionOut":"fadeSlow"');
-    expect(html).toContain('"transitionOutDuration":1');
+    expect(html).toContain('"transitionOutDuration":0.6');
   });
 
   it('subtitle layers have correct timing data for sequential display', () => {

@@ -219,13 +219,13 @@ describe('Expanded Transitions', () => {
   it('carouselUpSlow uses slow duration', () => {
     const result = buildTransitionIn('carouselUpSlow');
     expect(result).not.toBeNull();
-    expect(result!.duration).toBe(1);
+    expect(result!.duration).toBe(0.6);
   });
 
   it('shuffleLeftFast uses fast duration', () => {
     const result = buildTransitionIn('shuffleLeftFast');
     expect(result).not.toBeNull();
-    expect(result!.duration).toBe(0.25);
+    expect(result!.duration).toBe(0.15);
   });
 
   it('unknown transition returns null', () => {

@@ -189,7 +189,9 @@ describe('buildAudioMix', () => {
     expect(result.inputArgs).toEqual(['-i', '/audio/bg.mp3']);
     expect(result.filterComplex).toContain('volume=0.5');
     expect(result.filterComplex).toContain('afade=t=in:d=2');
-    expect(result.filterComplex).toContain('amix=inputs=1');
+    expect(result.filterComplex).toContain('apad=whole_dur=20');
+    expect(result.filterComplex).toContain('[aout]');
+    expect(result.filterComplex).not.toContain('amix');
   });
 
   it('builds soundtrack with fadeOut effect', () => {
