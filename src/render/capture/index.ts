@@ -13,6 +13,12 @@ export interface CaptureOptions {
   duration: number;
   isStatic?: boolean;
   onProgress?: ProgressCallback;
+  /** Use JPEG instead of PNG for faster I/O on low-memory machines. Default: false */
+  useJpeg?: boolean;
+  /** JPEG quality (1-100). Default: 80 */
+  jpegQuality?: number;
+  /** Capture every Nth frame only (e.g. 2 = half the frames). FFmpeg interpolates. Default: 1 */
+  frameSkip?: number;
 }
 
 export interface CaptureResult {
@@ -21,6 +27,10 @@ export interface CaptureResult {
   framePattern: string;
   resumed: boolean;
   resumedFrom: number;
+  /** Actual capture FPS after frameSkip (for FFmpeg -framerate) */
+  captureFps: number;
+  /** Target output FPS (original fps, for FFmpeg -r) */
+  outputFps: number;
 }
 
 interface Checkpoint {
@@ -48,7 +58,7 @@ function writeCheckpoint(dir: string, lastFrame: number, totalFrames: number): v
 }
 
 function frameExists(dir: string, frameNum: string): boolean {
-  return existsSync(join(dir, `frame_${frameNum}.png`));
+  return existsSync(join(dir, `frame_${frameNum}.png`)) || existsSync(join(dir, `frame_${frameNum}.jpg`));
 }
 
 /**
@@ -73,6 +83,11 @@ async function loadHtml(page: any, html: string): Promise<void> {
 export async function captureFrames(opts: CaptureOptions): Promise<CaptureResult> {
   mkdirSync(opts.outputDir, { recursive: true });
 
+  const imgType = opts.useJpeg ? 'jpeg' : 'png';
+  const imgExt = opts.useJpeg ? 'jpg' : 'png';
+  const jpegQuality = opts.jpegQuality ?? 80;
+  const frameSkip = Math.max(1, opts.frameSkip ?? 1);
+
   if (opts.isStatic) {
     const page = await acquirePage(opts.width, opts.height);
     try {
@@ -82,11 +97,13 @@ export async function captureFrames(opts: CaptureOptions): Promise<CaptureResult
           (window as any).updateFrame(time);
         }
       }, 0);
-      await page.screenshot({
-        path: join(opts.outputDir, 'frame_00001.png'),
-        type: 'png',
-      });
-      return { frameDir: opts.outputDir, frameCount: 1, framePattern: 'frame_%05d.png', resumed: false, resumedFrom: 0 };
+      const screenshotOpts: any = {
+        path: join(opts.outputDir, `frame_00001.${imgExt}`),
+        type: imgType,
+      };
+      if (imgType === 'jpeg') screenshotOpts.quality = jpegQuality;
+      await page.screenshot(screenshotOpts);
+      return { frameDir: opts.outputDir, frameCount: 1, framePattern: `frame_%05d.${imgExt}`, resumed: false, resumedFrom: 0, captureFps: opts.fps, outputFps: opts.fps };
     } finally {
       await releasePage(page);
     }
@@ -94,16 +111,20 @@ export async function captureFrames(opts: CaptureOptions): Promise<CaptureResult
 
   const totalFrames = Math.ceil(opts.fps * opts.duration);
 
+  // With frameSkip, we capture fewer frames but at wider time intervals
+  // e.g. frameSkip=2, 15fps, 14s = 210 total frames, capture 105 actual frames
+  const capturedFrameCount = Math.ceil(totalFrames / frameSkip);
+  const captureFps = opts.fps / frameSkip;
+
   // Check for existing checkpoint to resume from
   const checkpoint = readCheckpoint(opts.outputDir);
-  let startFrame = 0;
+  let startCaptureIndex = 0;
   let resumed = false;
 
-  if (checkpoint && checkpoint.totalFrames === totalFrames && checkpoint.lastFrame > 0) {
-    // Verify the last checkpointed frame actually exists on disk
+  if (checkpoint && checkpoint.totalFrames === capturedFrameCount && checkpoint.lastFrame > 0) {
     const lastFrameNum = String(checkpoint.lastFrame).padStart(5, '0');
     if (frameExists(opts.outputDir, lastFrameNum)) {
-      startFrame = checkpoint.lastFrame;
+      startCaptureIndex = checkpoint.lastFrame;
       resumed = true;
     }
   }
@@ -113,8 +134,10 @@ export async function captureFrames(opts: CaptureOptions): Promise<CaptureResult
   try {
     await loadHtml(page, opts.html);
 
-    for (let i = startFrame; i < totalFrames; i++) {
-      const currentTime = i / opts.fps;
+    for (let ci = startCaptureIndex; ci < capturedFrameCount; ci++) {
+      // Map capture index back to original timeline
+      const originalFrameIndex = ci * frameSkip;
+      const currentTime = originalFrameIndex / opts.fps;
 
       await page.evaluate((time: number) => {
         if (typeof (window as any).updateFrame === 'function') {
@@ -122,30 +145,34 @@ export async function captureFrames(opts: CaptureOptions): Promise<CaptureResult
         }
       }, currentTime);
 
-      const frameNum = String(i + 1).padStart(5, '0');
-      await page.screenshot({
-        path: join(opts.outputDir, `frame_${frameNum}.png`),
-        type: 'png',
-      });
+      const frameNum = String(ci + 1).padStart(5, '0');
+      const screenshotOpts: any = {
+        path: join(opts.outputDir, `frame_${frameNum}.${imgExt}`),
+        type: imgType,
+      };
+      if (imgType === 'jpeg') screenshotOpts.quality = jpegQuality;
+      await page.screenshot(screenshotOpts);
 
       // Write checkpoint every N frames
-      if ((i + 1) % CHECKPOINT_INTERVAL === 0) {
-        writeCheckpoint(opts.outputDir, i + 1, totalFrames);
+      if ((ci + 1) % CHECKPOINT_INTERVAL === 0) {
+        writeCheckpoint(opts.outputDir, ci + 1, capturedFrameCount);
       }
 
       // Report progress
-      opts.onProgress?.(i + 1, totalFrames);
+      opts.onProgress?.(ci + 1, capturedFrameCount);
     }
 
     // Final checkpoint
-    writeCheckpoint(opts.outputDir, totalFrames, totalFrames);
+    writeCheckpoint(opts.outputDir, capturedFrameCount, capturedFrameCount);
 
     return {
       frameDir: opts.outputDir,
-      frameCount: totalFrames,
-      framePattern: 'frame_%05d.png',
+      frameCount: capturedFrameCount,
+      framePattern: `frame_%05d.${imgExt}`,
       resumed,
-      resumedFrom: resumed ? startFrame : 0,
+      resumedFrom: resumed ? startCaptureIndex : 0,
+      captureFps,
+      outputFps: opts.fps,
     };
   } finally {
     await releasePage(page);

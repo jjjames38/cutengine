@@ -101,6 +101,10 @@ export async function executePipeline(
       s.layers.some(l => l.effects.motion || l.timing.transitionIn || l.timing.transitionOut),
     );
 
+    // Low-memory mode: JPEG capture + frame skip for M1 8GB survival
+    // Set CUTENGINE_LOW_MEMORY=1 to enable (auto-detected if free pages < 10000)
+    const lowMemory = process.env.CUTENGINE_LOW_MEMORY === '1';
+
     const captureResult = await captureFrames({
       html: sceneHtml,
       outputDir: frameDir,
@@ -109,6 +113,9 @@ export async function executePipeline(
       fps: ir.output.fps,
       duration: totalDuration,
       isStatic,
+      useJpeg: lowMemory,
+      jpegQuality: lowMemory ? 80 : undefined,
+      frameSkip: lowMemory ? 2 : 1,
       onProgress: renderId
         ? (frame, total) => progressHub.emitProgress({
             renderId: renderId!,
@@ -138,6 +145,8 @@ export async function executePipeline(
       output: ir.output,
       audio: ir.audio.clips.length > 0 || ir.audio.soundtrack ? ir.audio : undefined,
       outputPath,
+      captureFps: captureResult.captureFps,
+      outputFps: captureResult.outputFps,
     });
     stageLogs.push(logStage('encode', stageStart));
 

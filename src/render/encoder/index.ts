@@ -11,6 +11,10 @@ export interface EncodeOptions {
   output: IROutput;
   audio?: IRAudioMix;
   outputPath: string;
+  /** Actual capture FPS (may differ from output.fps when frameSkip is used) */
+  captureFps?: number;
+  /** Target output FPS for interpolation */
+  outputFps?: number;
 }
 
 export async function encode(opts: EncodeOptions): Promise<string> {
@@ -24,17 +28,23 @@ export function buildFFmpegArgs(opts: EncodeOptions, codecOverride?: HWCodec): s
   const [qualityFlag, qualityValue] = getQualityArgs(output.quality, codec);
   const presetArgs = getPresetArgs(codec);
 
+  // When frameSkip was used, input framerate matches capture fps,
+  // and we add -r to interpolate up to the target output fps
+  const inputFps = opts.captureFps ?? output.fps;
+  const needsInterpolation = opts.outputFps && opts.outputFps !== inputFps;
+  const interpolationArgs = needsInterpolation ? ['-r', String(opts.outputFps)] : [];
+
   switch (output.format) {
     case 'mp4': {
       const hasAudio = opts.audio && (opts.audio.clips.length > 0 || opts.audio.soundtrack);
 
       if (hasAudio) {
-        const totalDuration = opts.frameCount / output.fps;
+        const totalDuration = opts.frameCount / inputFps;
         const mix = buildAudioMix(opts.audio!, totalDuration);
 
         if (mix.filterComplex) {
           return [
-            '-framerate', String(output.fps),
+            '-framerate', String(inputFps),
             '-i', `${frameDir}/${framePattern}`,
             ...mix.inputArgs,
             '-filter_complex', mix.filterComplex,
@@ -43,6 +53,7 @@ export function buildFFmpegArgs(opts: EncodeOptions, codecOverride?: HWCodec): s
             ...presetArgs,
             qualityFlag, qualityValue,
             '-pix_fmt', 'yuv420p',
+            ...interpolationArgs,
             '-movflags', '+faststart',
             '-shortest',
             '-y',
@@ -52,12 +63,13 @@ export function buildFFmpegArgs(opts: EncodeOptions, codecOverride?: HWCodec): s
       }
 
       return [
-        '-framerate', String(output.fps),
+        '-framerate', String(inputFps),
         '-i', `${frameDir}/${framePattern}`,
         '-c:v', codec,
         ...presetArgs,
         qualityFlag, qualityValue,
         '-pix_fmt', 'yuv420p',
+        ...interpolationArgs,
         '-movflags', '+faststart',
         '-y',
         opts.outputPath,
@@ -65,7 +77,7 @@ export function buildFFmpegArgs(opts: EncodeOptions, codecOverride?: HWCodec): s
     }
     case 'gif':
       return [
-        '-framerate', String(output.fps),
+        '-framerate', String(inputFps),
         '-i', `${frameDir}/${framePattern}`,
         '-filter_complex', '[0:v] split [a][b]; [a] palettegen [pal]; [b][pal] paletteuse',
         '-y',

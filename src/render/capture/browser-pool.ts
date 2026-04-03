@@ -16,6 +16,7 @@ export async function getBrowser(): Promise<Browser> {
 
   browser = await puppeteer.connect({
     browserWSEndpoint: config.chromium.wsEndpoint,
+    protocolTimeout: 600_000, // 10 minutes for long renders
   });
 
   // Auto-clear on unexpected disconnect so next call reconnects
