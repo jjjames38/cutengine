@@ -103,5 +103,7 @@ export const config = {
   compositor: {
     enabled: process.env.COMPOSITOR_ENABLED !== 'false',
     forceMode: (process.env.COMPOSITOR_FORCE as 'ffmpeg' | 'puppeteer' | 'auto') ?? 'auto',
+    cacheEnabled: process.env.COMPOSITOR_CACHE !== 'false',
+    parallelWorkers: parseInt(process.env.COMPOSITOR_WORKERS ?? '0', 10),
   },
 } as const;

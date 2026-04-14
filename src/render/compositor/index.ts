@@ -9,6 +9,8 @@ import type { CompositorOptions } from './types.js';
 import { buildInputs, buildOverlayInputs } from './input_builder.js';
 import { buildFilterGraph } from './filter_graph.js';
 import { preRenderHtmlLayers } from './pre_renderer.js';
+import { preRenderSvgLayers } from './svg_renderer.js';
+import { PreRenderCache } from './cache_manager.js';
 import { buildAudioMix } from '../encoder/audio-mixer.js';
 import { resolveCodec, getQualityArgs, getPresetArgs } from '../encoder/hwaccel.js';
 import { config } from '../../config/index.js';
@@ -34,20 +36,38 @@ export async function composeTimeline(
   // 1. Build media inputs (-i arguments)
   const inputs = buildInputs(ir, totalDuration);
 
+  // 1.4 Initialize pre-render cache (Phase C)
+  const cacheEnabled = config.compositor?.cacheEnabled !== false;
+  const cache = cacheEnabled ? new PreRenderCache(workDir) : undefined;
+
   // 1.5 Pre-render HTML caption layers to transparent PNGs (Phase B)
-  let preRendered: Awaited<ReturnType<typeof preRenderHtmlLayers>> = [];
+  let htmlPreRendered: Awaited<ReturnType<typeof preRenderHtmlLayers>> = [];
+  let svgPreRendered: Awaited<ReturnType<typeof preRenderSvgLayers>> = [];
   let overlayInputMap = new Map<string, number>();
   let overlayArgs: string[] = [];
 
+  const { width, height } = ir.output;
+
   try {
-    const { width, height } = ir.output;
-    preRendered = await preRenderHtmlLayers(ir, workDir, width, height);
+    htmlPreRendered = await preRenderHtmlLayers(ir, workDir, width, height, cache);
   } catch {
     // Puppeteer not available — skip HTML pre-render (Phase A behavior)
-    preRendered = [];
+    htmlPreRendered = [];
   }
 
-  // 1.6 Add pre-rendered PNGs as FFmpeg inputs
+  // 1.6 Pre-render SVG layers to transparent PNGs (Phase C)
+  try {
+    svgPreRendered = await preRenderSvgLayers(ir, workDir, width, height, cache);
+  } catch {
+    // SVG pre-render failed — skip (SVG layers will be absent from output)
+    svgPreRendered = [];
+  }
+
+  // 1.7 Merge all pre-rendered results and flush cache
+  const preRendered = [...htmlPreRendered, ...svgPreRendered];
+  cache?.flush();
+
+  // 1.8 Add pre-rendered PNGs as FFmpeg inputs
   if (preRendered.length > 0) {
     const overlayResult = buildOverlayInputs(
       preRendered.map(p => p.pngPath),

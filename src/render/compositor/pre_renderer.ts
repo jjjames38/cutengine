@@ -9,6 +9,7 @@ import { join } from 'path';
 import type { IRTimeline, IRLayer } from '../parser/types.js';
 import { acquirePage, releasePage } from '../capture/browser-pool.js';
 import { extractFontFamilies, ensureFonts } from './font_resolver.js';
+import type { PreRenderCache } from './cache_manager.js';
 
 // ---- Types ----
 
@@ -116,6 +117,7 @@ export async function preRenderHtmlLayers(
   workDir: string,
   width: number,
   height: number,
+  cache?: PreRenderCache,
 ): Promise<PreRenderResult[]> {
   const htmlLayers = collectHtmlLayers(ir);
   if (htmlLayers.length === 0) return [];
@@ -143,6 +145,22 @@ export async function preRenderHtmlLayers(
     for (const layer of htmlLayers) {
       const pngName = `caption_${layer.sceneIndex}_${layer.layerIndex}.png`;
       const pngPath = join(preRenderDir, pngName);
+
+      // Cache check (Phase C) — skip Puppeteer if content unchanged
+      if (cache) {
+        const cacheContent = (layer.html ?? '') + (layer.css ?? '');
+        const key = cache.computeKey(cacheContent, layer.width, layer.height);
+        const cached = cache.get(key);
+        if (cached) {
+          results.push({
+            pngPath: cached,
+            sceneIndex: layer.sceneIndex,
+            layerIndex: layer.layerIndex,
+            timing: { ...layer.timing },
+          });
+          continue;
+        }
+      }
 
       const fullHtml = wrapInHtmlTransparent(
         layer.html,
@@ -189,6 +207,13 @@ export async function preRenderHtmlLayers(
         layerIndex: layer.layerIndex,
         timing: { ...layer.timing },
       });
+
+      // Store in cache (Phase C)
+      if (cache) {
+        const cacheContent = (layer.html ?? '') + (layer.css ?? '');
+        const key = cache.computeKey(cacheContent, layer.width, layer.height);
+        cache.set(key, pngPath);
+      }
     }
   } finally {
     await releasePage(page);

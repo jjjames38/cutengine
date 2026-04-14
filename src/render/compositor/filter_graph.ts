@@ -67,9 +67,8 @@ export function buildFilterGraph(
         continue;
       }
 
-      if (layer.asset.type === 'html') {
-        // HTML overlays (captions with styled backgrounds) — skip in Phase A
-        // Phase B will add PNG pre-render support
+      if (layer.asset.type === 'html' || layer.asset.type === 'svg') {
+        // HTML/SVG overlays are pre-rendered to PNG and overlaid separately (Phase B/C)
         continue;
       }
 

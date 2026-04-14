@@ -1,12 +1,18 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { canUseFFmpegCompositor } from '../../../src/render/compositor/router.js';
 import { buildInputs, buildOverlayInputs } from '../../../src/render/compositor/input_builder.js';
 import { buildFilterGraph, buildHtmlOverlayChain } from '../../../src/render/compositor/filter_graph.js';
 import { mapKenBurns, mapColorFilter, mapTransition, getFFmpegTransitionDuration } from '../../../src/render/compositor/filters_ffmpeg.js';
 import { collectHtmlLayers, wrapInHtmlTransparent } from '../../../src/render/compositor/pre_renderer.js';
 import { extractFontFamilies, extractWoff2Url } from '../../../src/render/compositor/font_resolver.js';
+import { collectSvgLayers } from '../../../src/render/compositor/svg_renderer.js';
+import { PreRenderCache } from '../../../src/render/compositor/cache_manager.js';
+import { splitTimeline } from '../../../src/render/compositor/chunk_splitter.js';
 import type { IRTimeline, IRScene, IRLayer } from '../../../src/render/parser/types.js';
 import type { PreRenderResult } from '../../../src/render/compositor/pre_renderer.js';
+import { mkdirSync, writeFileSync, existsSync, rmSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
 
 // ---- Helpers ----
 
@@ -50,13 +56,12 @@ describe('canUseFFmpegCompositor', () => {
     expect(canUseFFmpegCompositor(ir).eligible).toBe(true);
   });
 
-  it('rejects SVG asset', () => {
+  it('accepts SVG asset (Phase C)', () => {
     const ir = makeTimeline([
       makeLayer({ asset: { type: 'svg', src: '/tmp/test.svg' } }),
     ]);
     const result = canUseFFmpegCompositor(ir);
-    expect(result.eligible).toBe(false);
-    expect(result.reason).toContain('svg');
+    expect(result.eligible).toBe(true);
   });
 
   it('rejects luma asset', () => {
@@ -651,5 +656,237 @@ describe('extractWoff2Url', () => {
   it('returns null for CSS without woff2', () => {
     const css = `@font-face { font-family: 'Test'; src: url(test.ttf) format('truetype'); }`;
     expect(extractWoff2Url(css)).toBeNull();
+  });
+});
+
+// ==== Phase C: SVG Renderer ====
+
+function makeMultiSceneTimeline(sceneCount: number, sceneDuration = 5): IRTimeline {
+  const scenes: IRScene[] = [];
+  for (let i = 0; i < sceneCount; i++) {
+    scenes.push({
+      startTime: i * sceneDuration,
+      duration: sceneDuration,
+      layers: [makeLayer({
+        asset: { type: 'image', src: `/tmp/img_${i}.jpg` },
+        timing: { start: i * sceneDuration, duration: sceneDuration },
+      })],
+    });
+  }
+  return {
+    scenes,
+    audio: { clips: [{ src: '/tmp/narration.mp3', start: 0, duration: sceneCount * sceneDuration, volume: 1 }] },
+    output: { width: 1920, height: 1080, fps: 25, format: 'mp4', quality: 'high' },
+    assets: [],
+  };
+}
+
+describe('collectSvgLayers (Phase C)', () => {
+  it('collects SVG layers from timeline', () => {
+    const ir = makeTimeline([
+      makeLayer({ asset: { type: 'svg', src: '/tmp/icon.svg' } }),
+      makeLayer({ asset: { type: 'image', src: '/tmp/bg.jpg' }, timing: { start: 5, duration: 5 } }),
+    ]);
+    const svgLayers = collectSvgLayers(ir);
+    expect(svgLayers).toHaveLength(1);
+    expect(svgLayers[0].src).toBe('/tmp/icon.svg');
+    expect(svgLayers[0].sceneIndex).toBe(0);
+  });
+
+  it('returns empty for non-SVG timeline', () => {
+    const ir = makeTimeline([makeLayer()]);
+    expect(collectSvgLayers(ir)).toHaveLength(0);
+  });
+
+  it('collects programmatic SVG with shapes', () => {
+    const ir = makeTimeline([
+      makeLayer({ asset: { type: 'svg', shapes: [{ type: 'circle', cx: 50, cy: 50, r: 30 }] } }),
+    ]);
+    const svgLayers = collectSvgLayers(ir);
+    expect(svgLayers).toHaveLength(1);
+    expect(svgLayers[0].shapes).toHaveLength(1);
+    expect(svgLayers[0].src).toBeUndefined();
+  });
+
+  it('extracts correct timing from SVG layers', () => {
+    const ir: IRTimeline = {
+      scenes: [
+        {
+          startTime: 0,
+          duration: 5,
+          layers: [makeLayer({ asset: { type: 'image', src: '/tmp/bg.jpg' } })],
+        },
+        {
+          startTime: 5,
+          duration: 3,
+          layers: [makeLayer({
+            asset: { type: 'svg', src: '/tmp/overlay.svg' },
+            timing: { start: 5, duration: 3 },
+          })],
+        },
+      ],
+      audio: { clips: [] },
+      output: { width: 1920, height: 1080, fps: 25, format: 'mp4', quality: 'high' },
+      assets: [],
+    };
+    const svgLayers = collectSvgLayers(ir);
+    expect(svgLayers).toHaveLength(1);
+    expect(svgLayers[0].timing.start).toBe(5);
+    expect(svgLayers[0].timing.duration).toBe(3);
+  });
+});
+
+describe('filter_graph SVG skip (Phase C)', () => {
+  it('excludes SVG layers from mediaLayers', () => {
+    const svgLayer = makeLayer({ asset: { type: 'svg', src: '/tmp/icon.svg' } });
+    const imgLayer = makeLayer({ asset: { type: 'image', src: '/tmp/bg.jpg' } });
+    const ir = makeTimeline([svgLayer, imgLayer]);
+    const indexMap = new Map<string, number>();
+    indexMap.set('/tmp/bg.jpg', 0);
+    const result = buildFilterGraph(ir, indexMap, '/tmp/prefetch');
+    // Should have filter_complex for the image only, SVG is skipped
+    expect(result.filterComplex).toBeTruthy();
+    expect(result.filterComplex).not.toContain('icon.svg');
+  });
+});
+
+// ==== Phase C: Cache Manager ====
+
+describe('PreRenderCache (Phase C)', () => {
+  let testDir: string;
+
+  beforeEach(() => {
+    testDir = join(tmpdir(), `cutengine_cache_test_${Date.now()}`);
+    mkdirSync(testDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    try { rmSync(testDir, { recursive: true, force: true }); } catch { /* cleanup */ }
+  });
+
+  it('generates deterministic cache keys', () => {
+    const cache = new PreRenderCache(testDir);
+    const key1 = cache.computeKey('<div>hello</div>', 1920, 1080);
+    const key2 = cache.computeKey('<div>hello</div>', 1920, 1080);
+    expect(key1).toBe(key2);
+    expect(key1).toHaveLength(64); // SHA256 hex
+  });
+
+  it('returns null on cache miss', () => {
+    const cache = new PreRenderCache(testDir);
+    expect(cache.get('nonexistent_key')).toBeNull();
+  });
+
+  it('returns cached path on cache hit', () => {
+    const cache = new PreRenderCache(testDir);
+    // Create a fake PNG
+    const fakePng = join(testDir, 'test.png');
+    writeFileSync(fakePng, 'fake png data');
+
+    const key = cache.computeKey('test content', 1920, 1080);
+    cache.set(key, fakePng);
+
+    const result = cache.get(key);
+    expect(result).toBeTruthy();
+    expect(existsSync(result!)).toBe(true);
+  });
+
+  it('persists and reloads from disk', () => {
+    const cache1 = new PreRenderCache(testDir);
+    const fakePng = join(testDir, 'persist.png');
+    writeFileSync(fakePng, 'fake png data');
+    const key = cache1.computeKey('persist test', 1920, 1080);
+    cache1.set(key, fakePng);
+    cache1.flush();
+
+    // Create a new cache instance from the same directory
+    const cache2 = new PreRenderCache(testDir);
+    const result = cache2.get(key);
+    expect(result).toBeTruthy();
+  });
+
+  it('generates different keys for different content', () => {
+    const cache = new PreRenderCache(testDir);
+    const key1 = cache.computeKey('<div>AAA</div>', 1920, 1080);
+    const key2 = cache.computeKey('<div>BBB</div>', 1920, 1080);
+    expect(key1).not.toBe(key2);
+  });
+
+  it('generates different keys for different dimensions', () => {
+    const cache = new PreRenderCache(testDir);
+    const key1 = cache.computeKey('<div>same</div>', 1920, 1080);
+    const key2 = cache.computeKey('<div>same</div>', 1080, 1920);
+    expect(key1).not.toBe(key2);
+  });
+});
+
+// ==== Phase C: Chunk Splitter ====
+
+describe('splitTimeline (Phase C)', () => {
+  it('splits 4 scenes into 2 chunks evenly', () => {
+    const ir = makeMultiSceneTimeline(4, 5);
+    const chunks = splitTimeline(ir, 2);
+    expect(chunks).toHaveLength(2);
+    // Each chunk should have at least 2 scenes (+ possible overlap)
+    expect(chunks[0].subTimeline.scenes.length).toBeGreaterThanOrEqual(2);
+    expect(chunks[1].subTimeline.scenes.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('splits 5 scenes into 2 chunks (uneven)', () => {
+    const ir = makeMultiSceneTimeline(5, 5);
+    const chunks = splitTimeline(ir, 2);
+    expect(chunks).toHaveLength(2);
+    const totalScenes = chunks.reduce((s, c) => s + c.subTimeline.scenes.length, 0);
+    // Total scenes should be original + overlaps
+    expect(totalScenes).toBeGreaterThanOrEqual(5);
+  });
+
+  it('returns single chunk for 1 scene', () => {
+    const ir = makeMultiSceneTimeline(1, 10);
+    const chunks = splitTimeline(ir, 4);
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].overlapStart).toBe(false);
+  });
+
+  it('reduces worker count when fewer scenes than workers', () => {
+    const ir = makeMultiSceneTimeline(2, 5);
+    const chunks = splitTimeline(ir, 8);
+    expect(chunks.length).toBeLessThanOrEqual(2);
+  });
+
+  it('strips audio from all chunks', () => {
+    const ir = makeMultiSceneTimeline(4, 5);
+    const chunks = splitTimeline(ir, 2);
+    for (const chunk of chunks) {
+      expect(chunk.subTimeline.audio.clips).toHaveLength(0);
+    }
+  });
+
+  it('rebases scene timing to start at 0 for each chunk', () => {
+    const ir = makeMultiSceneTimeline(4, 5);
+    const chunks = splitTimeline(ir, 2);
+    for (const chunk of chunks) {
+      expect(chunk.subTimeline.scenes[0].startTime).toBe(0);
+    }
+  });
+
+  it('preserves output settings in all chunks', () => {
+    const ir = makeMultiSceneTimeline(4, 5);
+    const chunks = splitTimeline(ir, 2);
+    for (const chunk of chunks) {
+      expect(chunk.subTimeline.output.width).toBe(1920);
+      expect(chunk.subTimeline.output.height).toBe(1080);
+      expect(chunk.subTimeline.output.fps).toBe(25);
+    }
+  });
+
+  it('marks overlap correctly on boundary chunks', () => {
+    const ir = makeMultiSceneTimeline(6, 5);
+    const chunks = splitTimeline(ir, 3);
+    if (chunks.length >= 3) {
+      expect(chunks[0].overlapStart).toBe(false);
+      expect(chunks[1].overlapStart).toBe(true);
+      // overlapEnd removed in Phase C fix — only head-overlap used
+    }
   });
 });

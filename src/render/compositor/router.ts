@@ -5,7 +5,7 @@ import type { IRTimeline, IRLayer } from '../parser/types.js';
 import { mapTransition } from './filters_ffmpeg.js';
 
 const SUPPORTED_ASSET_TYPES = new Set([
-  'image', 'video', 'text', 'caption', 'html', 'audio',
+  'image', 'video', 'text', 'caption', 'html', 'audio', 'svg',
 ]);
 
 export interface RouteDecision {

@@ -4,6 +4,7 @@ import { captureFrames } from './capture/index.js';
 import { encode } from './encoder/index.js';
 import { prefetchAssets, applyPrefetchPaths, resolveAssetUrl } from './prefetch.js';
 import { composeTimeline, canUseFFmpegCompositor } from './compositor/index.js';
+import { renderParallel } from './compositor/parallel_runner.js';
 import { progressHub } from '../api/progress.js';
 import type { IRTimeline } from './parser/types.js';
 import { mkdirSync } from 'fs';
@@ -95,15 +96,26 @@ export async function executePipeline(
       await onStatus?.('compositing');
       const outputPath = join(workDir, `output.${ir.output.format}`);
 
-      await composeTimeline(ir, workDir, outputPath, {
-        onProgress: renderId
-          ? (percent) => progressHub.emitProgress({
-              renderId: renderId!,
-              stage: 'compose',
-              percent,
-            })
-          : undefined,
-      });
+      const workers = config.compositor?.parallelWorkers ?? 0;
+      const progressCallback = renderId
+        ? (percent: number) => progressHub.emitProgress({
+            renderId: renderId!,
+            stage: 'compose',
+            percent,
+          })
+        : undefined;
+
+      if (workers > 0 && ir.scenes.length > workers) {
+        // Parallel chunk rendering (Phase C)
+        await renderParallel(ir, workDir, outputPath, workers, {
+          onProgress: progressCallback,
+        });
+      } else {
+        // Sequential rendering (Phase A/B)
+        await composeTimeline(ir, workDir, outputPath, {
+          onProgress: progressCallback,
+        });
+      }
 
       stageLogs.push(logStage('compose', stageStart));
 
