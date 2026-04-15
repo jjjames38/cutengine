@@ -25,7 +25,7 @@ export async function encode(opts: EncodeOptions): Promise<string> {
 export function buildFFmpegArgs(opts: EncodeOptions, codecOverride?: HWCodec): string[] {
   const { output, frameDir, framePattern } = opts;
   const codec = codecOverride ?? resolveCodec(config.encoder.codec);
-  const [qualityFlag, qualityValue] = getQualityArgs(output.quality, codec);
+  const [qualityFlag, qualityValue] = getQualityArgs(output.quality, codec, config.encoder.crf);
   const presetArgs = getPresetArgs(codec);
 
   // When frameSkip was used, input framerate matches capture fps,

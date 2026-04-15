@@ -11,7 +11,7 @@ vi.mock('child_process', () => ({
 // Mock config
 vi.mock('../../../src/config/index.js', () => ({
   config: {
-    encoder: { codec: 'libx264' },
+    encoder: { codec: 'libx264', crf: undefined },
   },
 }));
 
@@ -380,5 +380,27 @@ describe('hwaccel detection', () => {
     const { getPresetArgs } = await import('../../../src/render/encoder/hwaccel.js');
     expect(getPresetArgs('h264_videotoolbox')).toEqual([]);
     expect(getPresetArgs('h264_nvenc')).toEqual(['-preset', 'p4']);
+  });
+
+  it('getQualityArgs overrides CRF when crfOverride is set for libx264', async () => {
+    const { getQualityArgs } = await import('../../../src/render/encoder/hwaccel.js');
+    // CRF override should replace the quality-mapped value for libx264
+    expect(getQualityArgs('medium', 'libx264', 18)).toEqual(['-crf', '18']);
+    expect(getQualityArgs('low', 'libx264', 18)).toEqual(['-crf', '18']);
+    expect(getQualityArgs('veryhigh', 'libx264', 18)).toEqual(['-crf', '18']);
+  });
+
+  it('getQualityArgs does NOT override non-CRF codecs even with crfOverride', async () => {
+    const { getQualityArgs } = await import('../../../src/render/encoder/hwaccel.js');
+    // h264_nvenc uses -cq, not -crf — override should NOT apply
+    expect(getQualityArgs('medium', 'h264_nvenc', 18)).toEqual(['-cq', '23']);
+    // h264_videotoolbox uses -q:v — override should NOT apply
+    expect(getQualityArgs('medium', 'h264_videotoolbox', 18)).toEqual(['-q:v', '40']);
+  });
+
+  it('getQualityArgs ignores crfOverride when undefined', async () => {
+    const { getQualityArgs } = await import('../../../src/render/encoder/hwaccel.js');
+    expect(getQualityArgs('medium', 'libx264', undefined)).toEqual(['-crf', '23']);
+    expect(getQualityArgs('high', 'libx264', undefined)).toEqual(['-crf', '18']);
   });
 });

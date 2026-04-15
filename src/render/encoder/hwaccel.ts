@@ -80,8 +80,12 @@ const QUALITY_MAP: Record<string, Record<HWCodec, { flag: string; value: number 
   },
 };
 
-export function getQualityArgs(quality: string, codec: HWCodec): [string, string] {
+export function getQualityArgs(quality: string, codec: HWCodec, crfOverride?: number): [string, string] {
   const entry = QUALITY_MAP[quality]?.[codec] ?? QUALITY_MAP.medium[codec];
+  // When crfOverride is set and codec uses CRF (-crf flag), override the value
+  if (crfOverride !== undefined && entry.flag === '-crf') {
+    return [entry.flag, String(crfOverride)];
+  }
   return [entry.flag, String(entry.value)];
 }
 

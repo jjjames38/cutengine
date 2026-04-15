@@ -99,6 +99,7 @@ export const config = {
   },
   encoder: {
     codec: process.env.ENCODER_CODEC ?? 'auto',
+    crf: process.env.ENCODER_CRF ? parseInt(process.env.ENCODER_CRF, 10) : undefined,
   },
   compositor: {
     enabled: process.env.COMPOSITOR_ENABLED !== 'false',
