@@ -13,10 +13,11 @@ interface MotionDef {
 const MOTION_MAP: Record<string, MotionDef> = {
   zoomIn:     { from: 'scale(1)',         to: 'scale(1.3)' },
   zoomOut:    { from: 'scale(1.3)',       to: 'scale(1)' },
-  slideLeft:  { from: 'translateX(0)',    to: 'translateX(-10%)' },
-  slideRight: { from: 'translateX(0)',    to: 'translateX(10%)' },
-  slideUp:    { from: 'translateY(0)',    to: 'translateY(-10%)' },
-  slideDown:  { from: 'translateY(0)',    to: 'translateY(10%)' },
+  // slide effects: scale(1.15) prevents edge exposure during translate
+  slideLeft:  { from: 'scale(1.15) translateX(5%)',  to: 'scale(1.15) translateX(-5%)' },
+  slideRight: { from: 'scale(1.15) translateX(-5%)', to: 'scale(1.15) translateX(5%)' },
+  slideUp:    { from: 'scale(1.15) translateY(5%)',  to: 'scale(1.15) translateY(-5%)' },
+  slideDown:  { from: 'scale(1.15) translateY(-5%)', to: 'scale(1.15) translateY(5%)' },
 };
 
 const SPEED_NORMAL = 5;
@@ -93,21 +94,30 @@ function easeInOut(t: number): number {
 }
 
 function interpolateTransform(from: string, to: string, t: number): string {
-  const fromVal = parseTransformValue(from);
-  const toVal = parseTransformValue(to);
+  const fromParts = parseAllTransforms(from);
+  const toParts = parseAllTransforms(to);
 
-  if (fromVal.fn !== toVal.fn) return t < 0.5 ? from : to;
+  if (fromParts.length !== toParts.length) return t < 0.5 ? from : to;
 
-  const val = fromVal.value + (toVal.value - fromVal.value) * t;
-  return `${fromVal.fn}(${val}${fromVal.unit})`;
+  return fromParts.map((fp, i) => {
+    const tp = toParts[i];
+    if (fp.fn !== tp.fn) return t < 0.5 ? `${fp.fn}(${fp.value}${fp.unit})` : `${tp.fn}(${tp.value}${tp.unit})`;
+    const val = fp.value + (tp.value - fp.value) * t;
+    return `${fp.fn}(${val}${fp.unit})`;
+  }).join(' ');
 }
 
-function parseTransformValue(s: string): { fn: string; value: number; unit: string } {
-  const match = s.match(/^(\w+)\(([^)]+)\)$/);
-  if (!match) return { fn: '', value: 0, unit: '' };
-  const fn = match[1];
-  const inner = match[2];
-  const numMatch = inner.match(/^([-.0-9]+)(%|px|deg)?$/);
-  if (!numMatch) return { fn, value: 0, unit: '' };
-  return { fn, value: parseFloat(numMatch[1]), unit: numMatch[2] || '' };
+function parseAllTransforms(s: string): Array<{ fn: string; value: number; unit: string }> {
+  const results: Array<{ fn: string; value: number; unit: string }> = [];
+  const regex = /(\w+)\(([^)]+)\)/g;
+  let match;
+  while ((match = regex.exec(s)) !== null) {
+    const fn = match[1];
+    const inner = match[2];
+    const numMatch = inner.match(/^([-.0-9]+)(%|px|deg)?$/);
+    if (numMatch) {
+      results.push({ fn, value: parseFloat(numMatch[1]), unit: numMatch[2] || '' });
+    }
+  }
+  return results;
 }

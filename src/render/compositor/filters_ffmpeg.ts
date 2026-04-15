@@ -1,12 +1,22 @@
 // Maps CutEngine IR effects to FFmpeg filter expressions.
 
-// Ken Burns motion effects → zoompan filter
-// CSS transform scale(1) → scale(1.3) maps to zoompan z=1.0 → z=1.25
-// (zoompan crops from center, so 1.25 ≈ 25% zoom looks like CSS scale(1.3))
-const ZOOM_START = 1.0;
-const ZOOM_END = 1.25;
-const SLIDE_RANGE = 0.1; // 10% movement range
-const SLIDE_ZOOM = 1.1;  // slight zoom to avoid edge exposure during slide
+// Ken Burns motion effects → scale+crop+scale chain (NOT zoompan)
+//
+// HISTORY: zoompan was used in v1~v7 but caused persistent pixelation/shimmer
+// because zoompan uses bilinear interpolation (hardcoded, not configurable).
+// Even pre-scaling to 8000px didn't fix it — bilinear re-samples every frame.
+//
+// SOLUTION: Replace zoompan with scale(lanczos) + crop(integer, no interpolation)
+// + scale(lanczos). Both scale ops use lanczos, crop uses integer pixel boundaries.
+// Reference: SS(Shotstack) and AE(After Effects) don't use zoompan — they use
+// their own high-quality renderers, which is why KB looked good in those engines.
+//
+// Intermediate resolution = 2x output (3840x2160 for 1080p). This provides enough
+// headroom for crop animation without hitting image edges.
+const KB_INTER_SCALE = 2;
+const ZOOM_END = 1.25;  // max zoom factor (25% zoom-in)
+const SLIDE_RANGE = 0.1; // 10% movement range for slide effects
+const SLIDE_ZOOM = 1.1;  // slight zoom during slide to avoid edge exposure
 
 interface KenBurnsParams {
   base: string;
@@ -31,15 +41,18 @@ function parseMotionEffect(effect: string): KenBurnsParams | null {
 }
 
 /**
- * Generate FFmpeg zoompan filter string for a Ken Burns effect.
- * The zoompan filter produces a video stream from a still image with pan/zoom animation.
+ * Generate FFmpeg scale+crop+scale filter chain for Ken Burns effect.
+ *
+ * Uses crop with frame-number expressions (n) instead of zoompan.
+ * crop operates on integer pixel boundaries — no interpolation artifacts.
+ * Both scale operations use lanczos for high-quality resampling.
  *
  * @param effect - Motion effect name (e.g., 'zoomIn', 'slideLeftFast')
  * @param clipDuration - Duration of the clip in seconds
- * @param width - Output width
- * @param height - Output height
+ * @param width - Output width (e.g., 1920)
+ * @param height - Output height (e.g., 1080)
  * @param fps - Output FPS
- * @returns zoompan filter string (without input/output labels)
+ * @returns filter chain string (without input/output labels)
  */
 export function mapKenBurns(
   effect: string,
@@ -51,40 +64,87 @@ export function mapKenBurns(
   const parsed = parseMotionEffect(effect);
   if (!parsed) return null;
 
-  const totalFrames = Math.round(clipDuration * fps);
-  // zoompan d = total frames for the animation
-  const d = totalFrames;
+  const d = Math.max(Math.floor(clipDuration * fps), 1);
+
+  // Intermediate resolution: 2x output for crop headroom
+  const iw = KB_INTER_SCALE * width;
+  const ih = KB_INTER_SCALE * height;
+
+  const prescale = `scale=${iw}:${ih}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${iw}:${ih}:(ow-iw)/2:(oh-ih)/2:color=black`;
+  const postscale = `scale=${width}:${height}:flags=lanczos`;
 
   switch (parsed.base) {
     case 'zoomIn': {
-      // Zoom from ZOOM_START to ZOOM_END, centered
-      const step = (ZOOM_END - ZOOM_START) / d;
-      return `zoompan=z='min(zoom+${step.toFixed(6)},${ZOOM_END})':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${d}:s=${width}x${height}:fps=${fps}`;
+      // Crop shrinks from 100% to 80% of intermediate → simulates 1.0→1.25x zoom
+      const shrinkW = Math.round(iw * (1 - 1 / ZOOM_END));
+      const shrinkH = Math.round(ih * (1 - 1 / ZOOM_END));
+      return [
+        prescale,
+        `crop=w='max(2,${iw}-trunc(${shrinkW}*n/${d}))':h='max(2,${ih}-trunc(${shrinkH}*n/${d}))':x='(iw-ow)/2':y='(ih-oh)/2'`,
+        postscale,
+      ].join(',');
     }
     case 'zoomOut': {
-      // Zoom from ZOOM_END to ZOOM_START, centered
-      const step = (ZOOM_END - ZOOM_START) / d;
-      return `zoompan=z='if(eq(on,1),${ZOOM_END},max(zoom-${step.toFixed(6)},${ZOOM_START}))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${d}:s=${width}x${height}:fps=${fps}`;
+      // Crop expands from 80% to 100% → simulates 1.25→1.0x zoom
+      const startW = Math.round(iw / ZOOM_END);
+      const startH = Math.round(ih / ZOOM_END);
+      const growW = iw - startW;
+      const growH = ih - startH;
+      return [
+        prescale,
+        `crop=w='max(2,${startW}+trunc(${growW}*n/${d}))':h='max(2,${startH}+trunc(${growH}*n/${d}))':x='(iw-ow)/2':y='(ih-oh)/2'`,
+        postscale,
+      ].join(',');
     }
     case 'slideLeft': {
-      // Pan left: x moves from 5% to 15% of image width (10% travel)
-      const startX = 0.05;
-      return `zoompan=z=${SLIDE_ZOOM}:x='iw*${startX}+iw*${SLIDE_RANGE}*on/${d}':y='ih*(${SLIDE_ZOOM}-1)/(2*${SLIDE_ZOOM})':d=${d}:s=${width}x${height}:fps=${fps}`;
+      // Fixed crop size (1/1.1 of intermediate), x slides left→right
+      const cropW = Math.round(iw / SLIDE_ZOOM);
+      const cropH = Math.round(ih / SLIDE_ZOOM);
+      const startX = Math.round(iw * 0.05);
+      const slidePixels = Math.round(iw * SLIDE_RANGE);
+      const maxX = iw - cropW; // clamp to prevent edge overflow
+      return [
+        prescale,
+        `crop=w=${cropW}:h=${cropH}:x='min(${maxX},trunc(${startX}+${slidePixels}*n/${d}))':y='(ih-oh)/2'`,
+        postscale,
+      ].join(',');
     }
     case 'slideRight': {
-      // Pan right: x moves from 15% to 5%
-      const startX = 0.05 + SLIDE_RANGE;
-      return `zoompan=z=${SLIDE_ZOOM}:x='iw*${startX}-iw*${SLIDE_RANGE}*on/${d}':y='ih*(${SLIDE_ZOOM}-1)/(2*${SLIDE_ZOOM})':d=${d}:s=${width}x${height}:fps=${fps}`;
+      // Fixed crop, x slides right→left
+      const cropW = Math.round(iw / SLIDE_ZOOM);
+      const cropH = Math.round(ih / SLIDE_ZOOM);
+      const startX = Math.round(iw * (0.05 + SLIDE_RANGE));
+      const slidePixels = Math.round(iw * SLIDE_RANGE);
+      return [
+        prescale,
+        `crop=w=${cropW}:h=${cropH}:x='max(0,trunc(${startX}-${slidePixels}*n/${d}))':y='(ih-oh)/2'`,
+        postscale,
+      ].join(',');
     }
     case 'slideUp': {
-      // Pan up: y moves from 5% to 15%
-      const startY = 0.05;
-      return `zoompan=z=${SLIDE_ZOOM}:x='iw*(${SLIDE_ZOOM}-1)/(2*${SLIDE_ZOOM})':y='ih*${startY}+ih*${SLIDE_RANGE}*on/${d}':d=${d}:s=${width}x${height}:fps=${fps}`;
+      // Fixed crop, y slides up
+      const cropW = Math.round(iw / SLIDE_ZOOM);
+      const cropH = Math.round(ih / SLIDE_ZOOM);
+      const startY = Math.round(ih * 0.05);
+      const slidePixels = Math.round(ih * SLIDE_RANGE);
+      const maxY = ih - cropH;
+      return [
+        prescale,
+        `crop=w=${cropW}:h=${cropH}:x='(iw-ow)/2':y='min(${maxY},trunc(${startY}+${slidePixels}*n/${d}))'`,
+        postscale,
+      ].join(',');
     }
     case 'slideDown': {
-      // Pan down: y moves from 15% to 5%
-      const startY = 0.05 + SLIDE_RANGE;
-      return `zoompan=z=${SLIDE_ZOOM}:x='iw*(${SLIDE_ZOOM}-1)/(2*${SLIDE_ZOOM})':y='ih*${startY}-ih*${SLIDE_RANGE}*on/${d}':d=${d}:s=${width}x${height}:fps=${fps}`;
+      // Fixed crop, y slides down
+      const cropW = Math.round(iw / SLIDE_ZOOM);
+      const cropH = Math.round(ih / SLIDE_ZOOM);
+      const startY = Math.round(ih * (0.05 + SLIDE_RANGE));
+      const slidePixels = Math.round(ih * SLIDE_RANGE);
+      return [
+        prescale,
+        `crop=w=${cropW}:h=${cropH}:x='(iw-ow)/2':y='max(0,trunc(${startY}-${slidePixels}*n/${d}))'`,
+        postscale,
+      ].join(',');
     }
     default:
       return null;

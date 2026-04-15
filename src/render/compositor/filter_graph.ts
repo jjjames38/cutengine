@@ -111,8 +111,8 @@ export function buildFilterGraph(
     const clipLabel = nextLabel('v');
     const filterParts: string[] = [];
 
-    // Scale to output resolution
-    filterParts.push(`scale=${width}:${height}:force_original_aspect_ratio=decrease`);
+    // Scale to output resolution (lanczos for sharper upscaling)
+    filterParts.push(`scale=${width}:${height}:force_original_aspect_ratio=decrease:flags=lanczos`);
     filterParts.push(`pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black`);
 
     // Ken Burns motion effect

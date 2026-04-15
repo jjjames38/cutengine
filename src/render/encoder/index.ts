@@ -53,6 +53,8 @@ export function buildFFmpegArgs(opts: EncodeOptions, codecOverride?: HWCodec): s
             ...presetArgs,
             qualityFlag, qualityValue,
             '-pix_fmt', 'yuv420p',
+            '-ac', '2',
+            '-b:a', '128k',
             ...interpolationArgs,
             '-movflags', '+faststart',
             '-shortest',

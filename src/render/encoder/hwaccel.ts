@@ -57,25 +57,25 @@ const QUALITY_MAP: Record<string, Record<HWCodec, { flag: string; value: number 
   low: {
     libx264: { flag: '-crf', value: 28 },
     h264_nvenc: { flag: '-cq', value: 28 },
-    h264_videotoolbox: { flag: '-q:v', value: 65 },
+    h264_videotoolbox: { flag: '-q:v', value: 55 },
     h264_qsv: { flag: '-global_quality', value: 28 },
   },
   medium: {
     libx264: { flag: '-crf', value: 23 },
     h264_nvenc: { flag: '-cq', value: 23 },
-    h264_videotoolbox: { flag: '-q:v', value: 50 },
+    h264_videotoolbox: { flag: '-q:v', value: 40 },
     h264_qsv: { flag: '-global_quality', value: 23 },
   },
   high: {
     libx264: { flag: '-crf', value: 18 },
     h264_nvenc: { flag: '-cq', value: 18 },
-    h264_videotoolbox: { flag: '-q:v', value: 35 },
+    h264_videotoolbox: { flag: '-q:v', value: 25 },
     h264_qsv: { flag: '-global_quality', value: 18 },
   },
   veryhigh: {
     libx264: { flag: '-crf', value: 15 },
     h264_nvenc: { flag: '-cq', value: 15 },
-    h264_videotoolbox: { flag: '-q:v', value: 25 },
+    h264_videotoolbox: { flag: '-q:v', value: 15 },
     h264_qsv: { flag: '-global_quality', value: 15 },
   },
 };

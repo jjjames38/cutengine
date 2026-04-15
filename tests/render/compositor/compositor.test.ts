@@ -114,23 +114,27 @@ describe('canUseFFmpegCompositor', () => {
 
 describe('filters_ffmpeg', () => {
   describe('mapKenBurns', () => {
-    it('generates zoompan for zoomIn', () => {
+    it('generates scale+crop+scale for zoomIn (no zoompan)', () => {
       const result = mapKenBurns('zoomIn', 5, 1920, 1080, 25);
       expect(result).toBeTruthy();
-      expect(result).toContain('zoompan');
-      expect(result).toContain('1920x1080');
-      expect(result).toContain('fps=25');
+      expect(result).toContain('crop=');
+      expect(result).toContain('flags=lanczos');
+      expect(result).toContain('scale=1920:1080');
+      expect(result).not.toContain('zoompan');
     });
 
-    it('generates zoompan for zoomOut', () => {
+    it('generates scale+crop+scale for zoomOut', () => {
       const result = mapKenBurns('zoomOut', 5, 1920, 1080, 25);
-      expect(result).toContain('zoompan');
-      expect(result).toContain('if(eq(on,1)');
+      expect(result).toContain('crop=');
+      expect(result).toContain('flags=lanczos');
+      expect(result).not.toContain('zoompan');
     });
 
-    it('generates zoompan for slideLeft', () => {
+    it('generates scale+crop+scale for slideLeft with clamp', () => {
       const result = mapKenBurns('slideLeft', 5, 1920, 1080, 25);
-      expect(result).toContain('zoompan');
+      expect(result).toContain('crop=');
+      expect(result).toContain('min(');  // edge clamp
+      expect(result).not.toContain('zoompan');
     });
 
     it('returns null for unknown effect', () => {
@@ -253,7 +257,7 @@ describe('buildFilterGraph', () => {
     const indexMap = new Map([[ '/tmp/img.jpg', 0 ]]);
     const result = buildFilterGraph(ir, indexMap, '/tmp/prefetch');
 
-    expect(result.filterComplex).toContain('zoompan');
+    expect(result.filterComplex).toContain('crop=');
     expect(result.videoOutputLabel).toBeTruthy();
   });
 

@@ -122,6 +122,8 @@ export async function composeTimeline(
     ...presetArgs,
     qualityFlag, qualityValue,
     '-pix_fmt', 'yuv420p',
+    '-ac', '2',
+    '-b:a', '128k',
     '-movflags', '+faststart',
     '-shortest',
     '-y',
