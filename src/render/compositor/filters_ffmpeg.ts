@@ -16,7 +16,7 @@
 const KB_INTER_SCALE = 2;
 const ZOOM_END = 1.25;  // max zoom factor (25% zoom-in)
 const SLIDE_RANGE = 0.1; // 10% movement range for slide effects
-const SLIDE_ZOOM = 1.1;  // slight zoom during slide to avoid edge exposure
+const SLIDE_ZOOM = 1.25;  // match Puppeteer scale(1.25) — prevents edge exposure during slide
 
 interface KenBurnsParams {
   base: string;

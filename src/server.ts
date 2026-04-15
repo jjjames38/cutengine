@@ -158,7 +158,7 @@ export async function createServer(opts?: { testing?: boolean }) {
 
       gpuSchedulerWorker = createGPUSchedulerWorker(gpuTracker, gpuManager);
 
-      app.log.info('GPU Scheduler initialized', { gpu_id: config.gpuScheduler.gpu_id });
+      app.log.info(`GPU Scheduler initialized (gpu_id: ${config.gpuScheduler.gpu_id})`);
     }
 
     const createWorker = createCreateWorker(providerRouter ?? undefined);
